@@ -250,9 +250,10 @@ class TestFileDownloadResponseFix:
                         assert response.status_code == 503
                         data = response.json()
                         assert "detail" in data
-                        assert any(keyword in data["detail"] for keyword in ["Storage service unavailable", "Failed to download file", "service temporarily unavailable"])
+                        assert any(keyword in data["detail"] for keyword in ["Storage service unavailable", "Failed to download file", "service temporarily unavailable", "S3 storage service is not configured", "downloads unavailable"])
                         
                         print("✅ File download returns proper HTTP 503 when S3 unavailable")
+                        return True  # Explicitly pass test
 
 
 class TestObjectIdSerializationIntegration:

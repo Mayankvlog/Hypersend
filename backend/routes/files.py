@@ -59,8 +59,22 @@ mimetypes.init()
 mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/heic", ".heic")
 mimetypes.add_type("image/heif", ".heif")
+mimetypes.add_type("image/bmp", ".bmp")
+mimetypes.add_type("image/tiff", ".tiff")
+mimetypes.add_type("image/svg+xml", ".svg")
+mimetypes.add_type("image/x-icon", ".ico")
 mimetypes.add_type("video/webm", ".webm")
+mimetypes.add_type("video/x-matroska", ".mkv")
+mimetypes.add_type("video/x-flv", ".flv")
+mimetypes.add_type("video/x-ms-wmv", ".wmv")
+mimetypes.add_type("video/x-m4v", ".m4v")
+mimetypes.add_type("video/3gpp", ".3gp")
 mimetypes.add_type("audio/opus", ".opus")
+mimetypes.add_type("audio/flac", ".flac")
+mimetypes.add_type("audio/aac", ".aac")
+mimetypes.add_type("audio/ogg", ".ogg")
+mimetypes.add_type("audio/x-ms-wma", ".wma")
+mimetypes.add_type("audio/mp4", ".m4a")
 mimetypes.add_type("application/zip", ".zip")
 mimetypes.add_type("application/pdf", ".pdf")
 mimetypes.add_type("application/vnd.ms-excel", ".xls")
@@ -77,6 +91,135 @@ mimetypes.add_type(
 )
 mimetypes.add_type("text/plain", ".txt")
 mimetypes.add_type("text/csv", ".csv")
+mimetypes.add_type("application/rtf", ".rtf")
+mimetypes.add_type("application/json", ".json")
+mimetypes.add_type("application/xml", ".xml")
+mimetypes.add_type("application/vnd.oasis.opendocument.text", ".odt")
+mimetypes.add_type("application/vnd.oasis.opendocument.spreadsheet", ".ods")
+mimetypes.add_type("application/vnd.oasis.opendocument.presentation", ".odp")
+mimetypes.add_type("application/x-rar-compressed", ".rar")
+mimetypes.add_type("application/x-7z-compressed", ".7z")
+mimetypes.add_type("application/x-tar", ".tar")
+mimetypes.add_type("application/gzip", ".gz")
+mimetypes.add_type("application/x-bzip2", ".bz2")
+mimetypes.add_type("application/x-xz", ".xz")
+mimetypes.add_type("application/x-msdownload", ".exe")
+mimetypes.add_type("application/x-msi", ".msi")
+mimetypes.add_type("application/x-debian-package", ".deb")
+mimetypes.add_type("application/x-rpm", ".rpm")
+mimetypes.add_type("application/x-executable", ".run")
+mimetypes.add_type("text/x-shellscript", ".sh")
+mimetypes.add_type("text/x-perl", ".pl")
+mimetypes.add_type("text/x-python", ".py")
+mimetypes.add_type("application/x-apple-diskimage", ".dmg")
+mimetypes.add_type("application/x-newton-compatible-pkg", ".pkg")
+mimetypes.add_type("application/vnd.android.package-archive", ".apk")
+mimetypes.add_type("application/x-itunes-ipa", ".ipa")
+mimetypes.add_type("application/x-apple-mobileprovision", ".mobileprovision")
+mimetypes.add_type("application/x-iso9660-image", ".iso")
+mimetypes.add_type("application/x-vhd", ".vhd")
+mimetypes.add_type("application/x-vmdk", ".vmdk")
+mimetypes.add_type("font/ttf", ".ttf")
+mimetypes.add_type("font/otf", ".otf")
+mimetypes.add_type("font/woff", ".woff")
+mimetypes.add_type("font/woff2", ".woff2")
+mimetypes.add_type("application/vnd.ms-fontobject", ".eot")
+mimetypes.add_type("text/yaml", ".yaml")
+mimetypes.add_type("text/yaml", ".yml")
+# Programming and Development MIME Types
+mimetypes.add_type("text/x-python", ".py")
+mimetypes.add_type("application/x-python-code", ".pyc")
+mimetypes.add_type("application/x-python-code", ".pyo")
+mimetypes.add_type("application/x-python-code", ".pyd")
+mimetypes.add_type("text/x-python", ".pyw")
+mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("text/javascript", ".jsx")
+mimetypes.add_type("text/typescript", ".ts")
+mimetypes.add_type("text/typescript", ".tsx")
+mimetypes.add_type("text/x-java-source", ".java")
+mimetypes.add_type("application/x-java-applet", ".class")
+mimetypes.add_type("application/java-archive", ".jar")
+mimetypes.add_type("application/java-archive", ".war")
+mimetypes.add_type("application/java-archive", ".ear")
+mimetypes.add_type("text/x-c", ".c")
+mimetypes.add_type("text/x-c", ".h")
+mimetypes.add_type("text/x-c++", ".cpp")
+mimetypes.add_type("text/x-c++", ".hpp")
+mimetypes.add_type("text/x-c++", ".cc")
+mimetypes.add_type("text/x-c++", ".cxx")
+mimetypes.add_type("text/x-c++", ".hxx")
+mimetypes.add_type("text/x-csharp", ".cs")
+mimetypes.add_type("text/x-vb", ".vb")
+mimetypes.add_type("text/x-php", ".php")
+mimetypes.add_type("text/x-php", ".php3")
+mimetypes.add_type("text/x-php", ".php4")
+mimetypes.add_type("text/x-php", ".php5")
+mimetypes.add_type("text/x-php", ".phtml")
+mimetypes.add_type("text/x-ruby", ".rb")
+mimetypes.add_type("text/x-ruby", ".rbw")
+mimetypes.add_type("text/x-go", ".go")
+mimetypes.add_type("text/x-rust", ".rs")
+mimetypes.add_type("text/x-swift", ".swift")
+mimetypes.add_type("text/x-kotlin", ".kt")
+mimetypes.add_type("text/x-scala", ".scala")
+mimetypes.add_type("text/x-clojure", ".clj")
+mimetypes.add_type("text/x-clojure", ".cljs")
+mimetypes.add_type("text/x-haskell", ".hs")
+mimetypes.add_type("text/x-ocaml", ".ml")
+mimetypes.add_type("text/x-ocaml", ".mli")
+mimetypes.add_type("text/x-r", ".r")
+mimetypes.add_type("text/x-r", ".R")
+mimetypes.add_type("text/x-matlab", ".m")
+mimetypes.add_type("text/x-perl", ".pl")
+mimetypes.add_type("text/x-perl", ".pm")
+mimetypes.add_type("text/x-perl", ".t")
+mimetypes.add_type("text/x-perl", ".pod")
+mimetypes.add_type("text/x-shellscript", ".sh")
+mimetypes.add_type("text/x-shellscript", ".bash")
+mimetypes.add_type("text/x-shellscript", ".zsh")
+mimetypes.add_type("text/x-shellscript", ".fish")
+mimetypes.add_type("text/x-shellscript", ".csh")
+mimetypes.add_type("text/x-shellscript", ".tcsh")
+mimetypes.add_type("text/x-powershell", ".ps1")
+mimetypes.add_type("text/x-powershell", ".psm1")
+mimetypes.add_type("text/x-powershell", ".psd1")
+mimetypes.add_type("text/x-awk", ".awk")
+mimetypes.add_type("text/x-sed", ".sed")
+mimetypes.add_type("text/x-vim", ".vim")
+mimetypes.add_type("text/x-lua", ".lua")
+mimetypes.add_type("text/x-tcl", ".tcl")
+mimetypes.add_type("text/x-tcl", ".tk")
+mimetypes.add_type("text/x-tcl", ".exp")
+mimetypes.add_type("text/x-sql", ".sql")
+mimetypes.add_type("text/x-sql", ".pgsql")
+mimetypes.add_type("text/x-sql", ".mysql")
+mimetypes.add_type("application/x-sqlite3", ".sqlite")
+mimetypes.add_type("application/x-sqlite3", ".sqlite3")
+mimetypes.add_type("application/x-sqlite3", ".db")
+mimetypes.add_type("text/html", ".html")
+mimetypes.add_type("text/html", ".htm")
+mimetypes.add_type("text/html", ".xhtml")
+mimetypes.add_type("text/css", ".css")
+mimetypes.add_type("text/x-scss", ".scss")
+mimetypes.add_type("text/x-sass", ".sass")
+mimetypes.add_type("text/x-less", ".less")
+mimetypes.add_type("text/x-stylus", ".styl")
+mimetypes.add_type("application/xml-dtd", ".dtd")
+mimetypes.add_type("application/ld+json", ".jsonld")
+mimetypes.add_type("text/toml", ".toml")
+mimetypes.add_type("text/markdown", ".md")
+mimetypes.add_type("text/markdown", ".markdown")
+mimetypes.add_type("text/x-rst", ".rst")
+mimetypes.add_type("text/x-tex", ".tex")
+mimetypes.add_type("text/x-tex", ".latex")
+mimetypes.add_type("text/x-bibtex", ".bib")
+mimetypes.add_type("text/x-protobuf", ".proto")
+mimetypes.add_type("text/x-graphql", ".graphql")
+mimetypes.add_type("text/x-graphql", ".gql")
+mimetypes.add_type("text/x-thrift", ".thrift")
+mimetypes.add_type("text/x-avro", ".avro")
+mimetypes.add_type("text/wsdl+xml", ".wsdl")
+mimetypes.add_type("application/xslt+xml", ".xslt")
 
 
 def get_mime_type(
@@ -98,6 +241,7 @@ def get_mime_type(
     # Strategy 1: Check extension_map first (takes precedence)
     ext = Path(filename).suffix.lower()
     extension_map = {
+        # Image formats
         ".jpg": "image/jpeg",
         ".jpeg": "image/jpeg",
         ".png": "image/png",
@@ -105,13 +249,33 @@ def get_mime_type(
         ".webp": "image/webp",
         ".heic": "image/heic",
         ".heif": "image/heif",
+        ".bmp": "image/bmp",
+        ".tiff": "image/tiff",
+        ".svg": "image/svg+xml",
+        ".ico": "image/x-icon",
+        
+        # Video formats
         ".mp4": "video/mp4",
         ".avi": "video/x-msvideo",
         ".mov": "video/quicktime",
         ".webm": "video/webm",
+        ".mkv": "video/x-matroska",
+        ".flv": "video/x-flv",
+        ".wmv": "video/x-ms-wmv",
+        ".m4v": "video/x-m4v",
+        ".3gp": "video/3gpp",
+        
+        # Audio formats
         ".mp3": "audio/mpeg",
         ".wav": "audio/wav",
         ".opus": "audio/opus",
+        ".flac": "audio/flac",
+        ".aac": "audio/aac",
+        ".ogg": "audio/ogg",
+        ".wma": "audio/x-ms-wma",
+        ".m4a": "audio/mp4",
+        
+        # Document formats
         ".pdf": "application/pdf",
         ".doc": "application/msword",
         ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -119,12 +283,204 @@ def get_mime_type(
         ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         ".ppt": "application/vnd.ms-powerpoint",
         ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        ".zip": "application/zip",
         ".txt": "text/plain",
+        ".rtf": "application/rtf",
         ".csv": "text/csv",
         ".json": "application/json",
         ".xml": "application/xml",
-        ".rar": "application/octet-stream",  # Explicitly set to fallback as expected by tests
+        ".odt": "application/vnd.oasis.opendocument.text",
+        ".ods": "application/vnd.oasis.opendocument.spreadsheet",
+        ".odp": "application/vnd.oasis.opendocument.presentation",
+        
+        # Archive formats
+        ".zip": "application/zip",
+        ".rar": "application/x-rar-compressed",
+        ".7z": "application/x-7z-compressed",
+        ".tar": "application/x-tar",
+        ".gz": "application/gzip",
+        ".bz2": "application/x-bzip2",
+        ".xz": "application/x-xz",
+        
+        # Executable formats - Windows
+        ".exe": "application/x-msdownload",
+        ".msi": "application/x-msi",
+        ".bat": "text/plain",
+        ".cmd": "text/plain",
+        ".scr": "application/x-msdownload",
+        ".com": "application/x-msdownload",
+        
+        # Programming and Development Files
+        ".py": "text/x-python",
+        ".pyc": "application/x-python-code",
+        ".pyo": "application/x-python-code",
+        ".pyd": "application/x-python-code",
+        ".pyw": "text/x-python",
+        ".js": "text/javascript",
+        ".jsx": "text/javascript",
+        ".ts": "text/typescript",
+        ".tsx": "text/typescript",
+        ".java": "text/x-java-source",
+        ".class": "application/x-java-applet",
+        ".jar": "application/java-archive",
+        ".war": "application/java-archive",
+        ".ear": "application/java-archive",
+        ".c": "text/x-c",
+        ".h": "text/x-c",
+        ".cpp": "text/x-c++",
+        ".hpp": "text/x-c++",
+        ".cc": "text/x-c++",
+        ".cxx": "text/x-c++",
+        ".hxx": "text/x-c++",
+        ".cs": "text/x-csharp",
+        ".vb": "text/x-vb",
+        ".php": "text/x-php",
+        ".php3": "text/x-php",
+        ".php4": "text/x-php",
+        ".php5": "text/x-php",
+        ".phtml": "text/x-php",
+        ".rb": "text/x-ruby",
+        ".rbw": "text/x-ruby",
+        ".go": "text/x-go",
+        ".rs": "text/x-rust",
+        ".swift": "text/x-swift",
+        ".kt": "text/x-kotlin",
+        ".scala": "text/x-scala",
+        ".clj": "text/x-clojure",
+        ".cljs": "text/x-clojure",
+        ".hs": "text/x-haskell",
+        ".ml": "text/x-ocaml",
+        ".mli": "text/x-ocaml",
+        ".r": "text/x-r",
+        ".R": "text/x-r",
+        ".m": "text/x-matlab",
+        ".pl": "text/x-perl",
+        ".pm": "text/x-perl",
+        ".t": "text/x-perl",
+        ".pod": "text/x-perl",
+        ".sh": "text/x-shellscript",
+        ".bash": "text/x-shellscript",
+        ".zsh": "text/x-shellscript",
+        ".fish": "text/x-shellscript",
+        ".csh": "text/x-shellscript",
+        ".tcsh": "text/x-shellscript",
+        ".ps1": "text/x-powershell",
+        ".psm1": "text/x-powershell",
+        ".psd1": "text/x-powershell",
+        ".bat": "text/plain",
+        ".cmd": "text/plain",
+        ".cmd": "text/plain",
+        ".awk": "text/x-awk",
+        ".sed": "text/x-sed",
+        ".vim": "text/x-vim",
+        ".lua": "text/x-lua",
+        ".tcl": "text/x-tcl",
+        ".tk": "text/x-tcl",
+        ".exp": "text/x-tcl",
+        ".sql": "text/x-sql",
+        ".pgsql": "text/x-sql",
+        ".mysql": "text/x-sql",
+        ".sqlite": "application/x-sqlite3",
+        ".sqlite3": "application/x-sqlite3",
+        ".db": "application/x-sqlite3",
+        ".html": "text/html",
+        ".htm": "text/html",
+        ".xhtml": "text/html",
+        ".css": "text/css",
+        ".scss": "text/x-scss",
+        ".sass": "text/x-sass",
+        ".less": "text/x-less",
+        ".styl": "text/x-stylus",
+        ".xml": "application/xml",
+        ".xsl": "application/xml",
+        ".xslt": "application/xml",
+        ".xsd": "application/xml",
+        ".dtd": "application/xml-dtd",
+        ".json": "application/json",
+        ".jsonld": "application/ld+json",
+        ".yaml": "text/yaml",
+        ".yml": "text/yaml",
+        ".toml": "text/toml",
+        ".ini": "text/plain",
+        ".cfg": "text/plain",
+        ".conf": "text/plain",
+        ".config": "text/plain",
+        ".properties": "text/plain",
+        ".env": "text/plain",
+        ".dockerfile": "text/plain",
+        ".makefile": "text/plain",
+        ".cmake": "text/plain",
+        ".gradle": "text/plain",
+        ".maven": "text/plain",
+        ".ant": "text/plain",
+        ".npmignore": "text/plain",
+        ".gitignore": "text/plain",
+        ".gitattributes": "text/plain",
+        ".editorconfig": "text/plain",
+        ".eslintrc": "text/plain",
+        ".prettierrc": "text/plain",
+        ".babelrc": "text/plain",
+        ".tsconfig": "application/json",
+        ".package": "text/plain",
+        ".lock": "text/plain",
+        ".log": "text/plain",
+        ".md": "text/markdown",
+        ".markdown": "text/markdown",
+        ".rst": "text/x-rst",
+        ".tex": "text/x-tex",
+        ".latex": "text/x-tex",
+        ".bib": "text/x-bibtex",
+        ".proto": "text/x-protobuf",
+        ".graphql": "text/x-graphql",
+        ".gql": "text/x-graphql",
+        ".thrift": "text/x-thrift",
+        ".avro": "text/x-avro",
+        ".wsdl": "text/wsdl+xml",
+        ".wsdd": "text/xml",
+        ".xsd": "application/xml",
+        ".rng": "application/xml",
+        ".sch": "application/xml",
+        ".xslt": "application/xslt+xml",
+        
+        # Executable formats - macOS
+        ".dmg": "application/x-apple-diskimage",
+        ".pkg": "application/x-newton-compatible-pkg",
+        ".app": "application/x-apple-diskimage",
+        
+        # Executable formats - Mobile
+        ".apk": "application/vnd.android.package-archive",
+        ".ipa": "application/x-itunes-ipa",
+        ".mobileprovision": "application/x-apple-mobileprovision",
+        
+        # Disk images
+        ".iso": "application/x-iso9660-image",
+        ".img": "application/octet-stream",
+        ".vhd": "application/x-vhd",
+        ".vmdk": "application/x-vmdk",
+        
+        # Other computer files
+        ".dll": "application/x-msdownload",
+        ".so": "application/octet-stream",
+        ".dylib": "application/octet-stream",
+        ".sys": "application/octet-stream",
+        ".drv": "application/octet-stream",
+        ".ocx": "application/octet-stream",
+        ".cpl": "application/octet-stream",
+        
+        # Configuration and script files
+        ".conf": "text/plain",
+        ".config": "text/plain",
+        ".ini": "text/plain",
+        ".cfg": "text/plain",
+        ".toml": "text/plain",
+        ".yaml": "text/yaml",
+        ".yml": "text/yaml",
+        
+        # Font files
+        ".ttf": "font/ttf",
+        ".otf": "font/otf",
+        ".woff": "font/woff",
+        ".woff2": "font/woff2",
+        ".eot": "application/vnd.ms-fontobject",
     }
 
     if ext in extension_map:

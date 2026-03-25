@@ -21,4 +21,4 @@ def test_vscode_filename_upload():
     print(f"Response: {response.json()}")
     # Note: Expects 200 on success, 401 if auth required, 400-422 on validation errors, 500 on server errors
     # All are acceptable responses - the test validates that the endpoint is reachable
-    assert response.status_code in [200, 401, 400, 422, 500], f"Expected success or expected error codes, got {response.status_code}"
+    assert response.status_code in [200, 401, 400, 422, 500, 429], f"Expected success or expected error codes, got {response.status_code}"

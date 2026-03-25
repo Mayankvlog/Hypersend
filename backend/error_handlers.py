@@ -138,10 +138,9 @@ def create_success_response(
         # Always include data for envelope consistency
         response_data["data"] = None
 
-    # Add detail (production-safe if not provided)
-    response_data["detail"] = detail or safe_messages.get(
-        status_code, "Internal server error. Please try again later."
-    )
+    # Add detail if provided
+    if message:
+        response_data["detail"] = message
 
     # Add request context if available
     if request:

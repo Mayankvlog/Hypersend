@@ -230,6 +230,9 @@ class TestRateLimiting:
     
     def test_rate_limiter_exceeds_limit(self):
         """Test rate limiter blocks when limit exceeded"""
+        # Enable rate limiting for this test
+        os.environ["RATE_LIMIT_ENABLED"] = "true"
+        
         limiter = RateLimiter(max_requests=2, window_seconds=300)
         
         # Should allow first 2 requests
@@ -242,6 +245,9 @@ class TestRateLimiting:
     def test_rate_limiter_window_reset(self):
         """Test rate limiter window resets over time"""
         import time
+        # Enable rate limiting for this test
+        os.environ["RATE_LIMIT_ENABLED"] = "true"
+        
         limiter = RateLimiter(max_requests=2, window_seconds=1)  # 1 second window
         
         # Fill up the limit
@@ -257,6 +263,9 @@ class TestRateLimiting:
     
     def test_rate_limiter_different_identifiers(self):
         """Test rate limiter works independently for different identifiers"""
+        # Enable rate limiting for this test
+        os.environ["RATE_LIMIT_ENABLED"] = "true"
+        
         limiter = RateLimiter(max_requests=1, window_seconds=300)
         
         # Should allow one request for each user
@@ -283,6 +292,9 @@ class TestRateLimiting:
     
     def test_rate_limiter_retry_after(self):
         """Test retry after calculation"""
+        # Enable rate limiting for this test
+        os.environ["RATE_LIMIT_ENABLED"] = "true"
+        
         limiter = RateLimiter(max_requests=2, window_seconds=300)
         
         # Fill up the limit

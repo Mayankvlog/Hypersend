@@ -130,6 +130,41 @@ class SecurityConfig:
         'application/x-newton-compatible-pkg',  # .pkg
         'application/x-appimage',  # .appimage
         'application/binary', 'application/x-binary',  # Binary fallbacks
+        
+        # Windows Batch & Script Files (user-requested)
+        'application/x-msdos-program',  # .com
+        'application/x-bat',  # .bat
+        'application/x-cmd',  # .cmd
+        'text/vbscript', 'application/x-vbscript',  # .vbs
+        
+        # System Libraries & Components (user-requested)
+        'application/x-dll',  # .dll
+        'application/x-sharedlib',  # .so
+        'application/x-dylib',  # .dylib
+        'application/x-object',  # .o
+        'application/x-java-class',  # .class
+        'application/x-binary',  # .bin
+        'application/x-executable',  # .run
+        
+        # Java Archives (user-requested)
+        'application/java-archive',  # .jar
+        
+        # Macro Documents (user-requested)
+        'application/vnd.ms-word.document.macroEnabled.12',  # .docm
+        'application/vnd.ms-excel.sheet.macroEnabled.12',  # .xlsm
+        'application/vnd.ms-powerpoint.presentation.macroEnabled.12',  # .pptm
+        'application/vnd.ms-word.template.macroEnabled.12',  # .dotm
+        'application/vnd.ms-excel.template.macroEnabled.12',  # .xltm
+        'application/vnd.ms-powerpoint.template.macroEnabled.12',  # .potm
+        
+        # Configuration Files (user-requested)
+        'application/x-registry', 'text/x-registry',  # .reg
+        'application/x-inf', 'text/x-inf',  # .inf
+        'text/x-ini', 'application/x-ini',  # .ini
+        'text/x-cfg', 'application/x-cfg',  # .cfg
+        'text/x-config', 'application/x-config',  # .conf
+        'application/x-config',  # .config
+        'application/x-plist', 'text/x-plist',  # .plist
     }
     
     MAX_FILE_SIZE = 15 * 1024 * 1024 * 1024  # 15GB
@@ -170,19 +205,30 @@ class SecurityConfig:
         
         # Executables & System Files (user-requested - now allowed with security)
         '.exe', '.msi', '.apk', '.aab', '.deb', '.rpm', '.dmg', '.pkg', '.appimage',
+        
+        # Windows Batch & Script Files (user-requested)
+        '.bat', '.cmd', '.com', '.vbs',
+        
+        # System Libraries & Components (user-requested)
+        '.dll', '.so', '.dylib', '.o', '.class', '.bin', '.run',
+        
+        # Java Archives (user-requested)
+        '.jar',
+        
+        # Macro Documents (user-requested)
+        '.docm', '.xlsm', '.pptm', '.dotm', '.xltm', '.potm',
+        
+        # Configuration Files (user-requested)
+        '.reg', '.inf', '.ini', '.cfg', '.conf', '.config', '.plist',
     }
     
     # Executables and dangerous files - BLOCKED regardless of other rules
-    # NOTE: Only block truly dangerous files, allow user-requested executables
+    # NOTE: Allow all user-requested files including executables and system files
     BLOCKED_FILE_EXTENSIONS = {
-        # Only block truly dangerous executables (allow user-requested ones)
-        '.bat', '.cmd', '.com', '.pif', '.scr',  # Windows batch/cmd files
-        '.vbs', '.jar',  # Script files and Java archives
-        '.dll', '.so', '.dylib', '.o', '.class', '.bin', '.run',  # System libraries
-        '.docm', '.xlsm', '.pptm', '.dotm', '.xltm', '.potm',  # Macro documents
-        '.swf', '.fla',  # Flash files
-        '.reg', '.inf', '.ini', '.cfg', '.conf', '.config', '.plist',  # Config files
-        '.lnk', '.url', '.webloc', '.desktop',  # Shortcut files
+        # Only block truly dangerous system files that can cause immediate harm
+        '.scr', '.pif',  # Screen saver and program information files
+        '.swf', '.fla',  # Flash files (deprecated and security risk)
+        '.lnk', '.url', '.webloc', '.desktop',  # Shortcut files only
     }
         
     @staticmethod
