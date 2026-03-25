@@ -217,8 +217,10 @@ def create_error_response(
     )
 
 
-# Create router
-router = APIRouter()
+# Create separate routers for different purposes
+router = APIRouter()  # Main files router for /api/v1/files/*
+attach_router = APIRouter()  # Attach router for /api/v1/attach/*
+media_router = APIRouter()   # Media router for /api/v1/media/*
 
 # Import dependencies
 from fastapi import Depends
@@ -377,9 +379,7 @@ def _maybe_await(obj):
     """Maybe await an object"""
     return obj
 
-# Router utilities
-media_router = router
-attach_router = router
+# Router utilities - separate routers already created above
 
 # Create missing dependency functions
 async def get_current_user_for_download(request: Request) -> str:
@@ -3182,9 +3182,13 @@ async def init_photo_video_upload(
 ):
     """Initialize photo/video upload - Uses /init endpoint under the hood"""
     import traceback
+    
+    # Log when route is hit
+    logger.info(f"[ATTACH] POST /photos-videos/init endpoint hit by user: {current_user or 'anonymous'}")
 
     try:
         body = await request.json()
+        logger.info(f"[ATTACH] Photo/video upload init request body: {body}")
     except ValueError as json_error:
         _log(
             "error",
@@ -3317,7 +3321,10 @@ async def init_photo_video_upload(
 
     # Delegate to main init endpoint with enhanced error handling
     try:
-        return await initialize_upload(request=request, current_user=current_user)
+        # Pass the validated body directly to initialize_upload
+        result = initialize_upload(body)
+        logger.info(f"[ATTACH] Photo/video upload initialized successfully: {result}")
+        return result
     except HTTPException as he:
         # Re-raise HTTPException to preserve status codes
         _log(

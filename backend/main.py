@@ -2460,7 +2460,7 @@ app.include_router(
     files.router, prefix="/api/v1/files"
 )  # Standard file operations: /api/v1/files/*
 app.include_router(
-    files.attach_router, prefix="/api/v1"
+    files.attach_router, prefix="/api/v1/attach"
 )  # Attachment operations: /api/v1/attach/photos-videos/init, /api/v1/attach/documents/init, etc.
 app.include_router(
     files.media_router, prefix="/api/v1"
