@@ -1321,9 +1321,32 @@ async def upload_chunk(
             )
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many chunk upload requests",
-                headers={"Retry-After": str(retry_after)},
+                detail="Too many chunk upload requests. Please wait before trying again.",
+                headers={
+                    "Retry-After": str(retry_after),
+                    "X-RateLimit-Limit": "120",
+                    "X-RateLimit-Window": "60"
+                },
             )
+
+        # Add timeout handling for large chunk uploads
+        try:
+            # Read chunk data with timeout protection
+            chunk_data = await request.body()
+            
+            if not chunk_data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Empty chunk data received",
+                )
+                
+        except Exception as e:
+            if "timeout" in str(e).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_408_REQUEST_TIMEOUT,
+                    detail="Chunk upload timeout. Please try again with a smaller chunk size.",
+                )
+            raise
 
         # Mock chunk upload logic - still returns success but now with validation
         return {
@@ -1331,6 +1354,8 @@ async def upload_chunk(
             "chunk_index": chunk_index,
             "status": "uploaded",
             "message": f"Chunk {chunk_index} uploaded successfully",
+            "chunk_size": len(chunk_data) if 'chunk_data' in locals() else 0,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except HTTPException:

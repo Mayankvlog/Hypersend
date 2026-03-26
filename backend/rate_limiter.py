@@ -124,8 +124,8 @@ upload_init_limiter = RateLimiter(
     max_requests=10, window_seconds=60
 )  # 10 requests per minute
 upload_chunk_limiter = RateLimiter(
-    max_requests=60, window_seconds=60
-)  # 60 requests per minute
+    max_requests=120, window_seconds=60
+)  # 120 requests per minute (2 per second for better throughput)
 upload_complete_limiter = RateLimiter(
     max_requests=10, window_seconds=60
 )  # 10 requests per minute
