@@ -1711,8 +1711,6 @@ async def download_file(
             # Chat members can access files in their chats
             elif chat_id:
                 try:
-                    from db_proxy import chats_collection
-
                     chat_doc = await chats_collection().find_one({"_id": chat_id})
                     if not chat_doc and ObjectId.is_valid(str(chat_id)):
                         chat_doc = await chats_collection().find_one(
@@ -2972,8 +2970,6 @@ async def get_media_by_id_main(
             pass
         elif chat_id:
             try:
-                from db_proxy import chats_collection
-
                 chat_doc = await chats_collection().find_one({"_id": chat_id})
                 if not chat_doc and ObjectId.is_valid(str(chat_id)):
                     chat_doc = await chats_collection().find_one(
@@ -3740,8 +3736,6 @@ async def get_media_by_key(
                     pass  # Shared user has access
                 elif chat_id:
                     try:
-                        from db_proxy import chats_collection
-
                         chat_doc = await chats_collection().find_one({"_id": chat_id})
                         if not chat_doc and ObjectId.is_valid(str(chat_id)):
                             chat_doc = await chats_collection().find_one(
@@ -3822,20 +3816,16 @@ async def get_media_by_key(
                 )
                 owner_id = file_doc.get("owner_id")
                 chat_id = file_doc.get("chat_id")
-                shared_with = file_doc.get("shared_with", [])
 
-                if str(owner_id) == str(current_user):
-                    pass
-                elif str(current_user) in [str(x) for x in (shared_with or [])]:
-                    pass
-                elif chat_id:
-                    from db_proxy import chats_collection
-
-                    chat_doc = await chats_collection().find_one({"_id": chat_id})
-                    if not chat_doc and ObjectId.is_valid(str(chat_id)):
-                        chat_doc = await chats_collection().find_one(
-                            {"_id": ObjectId(str(chat_id))}
-                        )
+                chat_doc = await chats_collection().find_one({"_id": chat_id})
+                if not chat_doc and ObjectId.is_valid(str(chat_id)):
+                    chat_doc = await chats_collection().find_one(
+                        {"_id": ObjectId(str(chat_id))}
+                    )
+                members = chat_doc.get("members", []) if chat_doc else []
+                if not (
+                    chat_doc and str(current_user) in [str(m) for m in members]
+                ):
 
                     members = chat_doc.get("members", []) if chat_doc else []
                     if not (
