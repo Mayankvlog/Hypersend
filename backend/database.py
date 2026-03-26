@@ -273,17 +273,10 @@ async def connect_db():
     else:
         database_name = os.getenv("DATABASE_NAME")
 
-    # CRITICAL: Mock database is permanently disabled
-    use_mock_db = bool(getattr(settings, "USE_MOCK_DB", False))
-    if use_mock_db:
-        raise RuntimeError(
-            'USE_MOCK_DB must be "false" - mock database is permanently disabled'
-        )
-
     # CRITICAL: MongoDB Atlas is REQUIRED
     if not mongodb_uri or not database_name:
         raise ValueError(
-            "MongoDB Atlas configuration is required - mock database is permanently disabled"
+            "MongoDB Atlas configuration is required - MONGODB_URI and DATABASE_NAME must be set"
         )
 
     # Validate URI is Atlas format or allow mongodb:// for testing
@@ -307,11 +300,11 @@ async def connect_db():
         await client.admin.command("ping")
     except asyncio.TimeoutError as e:
         raise ConnectionError(
-            "MongoDB Atlas connection test failed - mock database is not available"
+            "MongoDB Atlas connection test failed - check network and credentials"
         ) from e
     except Exception as e:
         raise ConnectionError(
-            "MongoDB Atlas connection test failed - mock database is not available"
+            "MongoDB Atlas connection test failed - check network and credentials"
         ) from e
 
     _database_initialized = True

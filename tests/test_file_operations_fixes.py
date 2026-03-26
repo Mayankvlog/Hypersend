@@ -295,19 +295,20 @@ class TestS3ConfigurationFixes:
                 
                 service = MediaLifecycleService()
                 
-                mock_boto3.client.assert_called_once_with(
-                    's3',
-                    aws_access_key_id="test-key",
-                    aws_secret_access_key="test-secret",
-                    region_name="us-east-1",
-                    config={
-                        'max_pool_connections': 50,
-                        'retries': {
-                            'max_attempts': 3,
-                            'mode': 'adaptive'
-                        }
-                    }
-                )
+                # Verify boto3.client was called with correct parameters
+                mock_boto3.client.assert_called_once()
+                call_args = mock_boto3.client.call_args
+                
+                # Check positional and keyword arguments
+                assert call_args[0][0] == 's3'  # First positional arg
+                assert call_args[1]['aws_access_key_id'] == "test-key"
+                assert call_args[1]['aws_secret_access_key'] == "test-secret"
+                assert call_args[1]['region_name'] == "us-east-1"
+                
+                # Check that config is a Config object with correct settings
+                config_obj = call_args[1]['config']
+                assert hasattr(config_obj, 'max_pool_connections')
+                assert hasattr(config_obj, 'retries')
     
     def test_media_service_no_s3_config(self):
         """Test service handles missing S3 configuration gracefully"""

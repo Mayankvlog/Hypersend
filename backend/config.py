@@ -226,10 +226,6 @@ class Settings:
     # DEVELOPMENT CONFIGURATION
     # ============================================================================
 
-    # CRITICAL: Mock database is PERMANENTLY DISABLED for production testing
-    # Force real MongoDB Atlas connection even during pytest
-    USE_MOCK_DB: bool = False  # Always False - no exceptions for testing
-
     # ============================================================================
     # SECURITY CONFIGURATION
     # ============================================================================

@@ -1189,13 +1189,23 @@ async def initialize_upload(
                 headers={"Retry-After": str(retry_after)},
             )
 
-        # Generate upload ID
-        upload_id = str(uuid.uuid4())
+        # CRITICAL: Reject anonymous uploads - user must be authenticated
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required for file uploads",
+            )
 
-        # Store upload data in database/cache
+        # Generate upload ID and S3 key using UUID (no collisions)
+        upload_id = str(uuid.uuid4())
+        s3_key = f"uploads/{current_user}/{upload_id}/{body.get('file_name', 'unknown')}"
+
+        # Store upload data in database with required metadata
         upload_data = {
             "upload_id": upload_id,
             "user_id": current_user,
+            "chat_id": body.get("chat_id"),  # Optional chat association
+            "s3_key": s3_key,  # S3 object key for storage
             "file_name": body.get("file_name", "unknown"),
             "file_size": body.get("file_size", 0),
             "mime_type": body.get("mime_type", "application/octet-stream"),
@@ -1259,6 +1269,7 @@ async def initialize_upload(
         return {
             "upload_id": upload_id,
             "uploadId": upload_id,
+            "s3_key": s3_key,
             "status": "initialized",
             "message": "Upload initialized successfully",
             "total_chunks": 1,
@@ -1386,6 +1397,13 @@ async def complete_upload(
 ):
     """Complete upload function for test compatibility"""
     try:
+        # CRITICAL: Reject anonymous uploads - user must be authenticated
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required for file upload completion",
+            )
+
         # Validate upload_id
         if (
             not upload_id
@@ -1399,22 +1417,71 @@ async def complete_upload(
             )
 
         # Rate limiting check - ENABLED for production, including tests
-        if not upload_complete_limiter.is_allowed(current_user or "anonymous"):
-            retry_after = upload_complete_limiter.get_retry_after(
-                current_user or "anonymous"
-            )
+        if not upload_complete_limiter.is_allowed(current_user):
+            retry_after = upload_complete_limiter.get_retry_after(current_user)
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Too many upload completion requests",
                 headers={"Retry-After": str(retry_after)},
             )
 
-        # Mock completion logic
+        # Find upload record in MongoDB
+        upload_record = await uploads_collection().find_one({"upload_id": upload_id})
+        if not upload_record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Upload not found",
+            )
+
+        # Verify ownership
+        if upload_record.get("user_id") != current_user:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied - upload belongs to different user",
+            )
+
+        # Generate final S3 file URL
+        s3_key = upload_record.get("s3_key")
+        if not s3_key:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="S3 key not found in upload record",
+            )
+
+        # Generate S3 URL (valid for 1 hour)
+        s3_client = _get_s3_client()
+        if s3_client:
+            try:
+                file_url = s3_client.generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": settings.S3_BUCKET, "Key": s3_key},
+                    ExpiresIn=3600,  # 1 hour
+                )
+            except Exception as e:
+                _log("error", f"Failed to generate S3 URL: {e}")
+                file_url = f"https://{settings.S3_BUCKET}.s3.amazonaws.com/{s3_key}"
+        else:
+            file_url = f"https://{settings.S3_BUCKET}.s3.amazonaws.com/{s3_key}"
+
+        # Update MongoDB record with completion status and file_url
+        await uploads_collection().update_one(
+            {"upload_id": upload_id},
+            {
+                "$set": {
+                    "status": "completed",
+                    "file_url": file_url,
+                    "completed_at": datetime.now(timezone.utc),
+                }
+            }
+        )
+
         return {
             "upload_id": upload_id,
             "status": "completed",
             "success": True,
             "message": "Upload completed successfully",
+            "file_url": file_url,
+            "s3_key": s3_key,
             "checksum": "",  # Return empty string for checksum as expected by tests
         }
 
@@ -1704,18 +1771,20 @@ async def download_file(
             log_data,
         )
 
-        # Fallback logic for web clients without device_id
+        # CRITICAL: No fallback device_id logic - device_id is required for proper tracking
         if not device_id:
-            # Generate a temporary device identifier for web clients
-            device_id = f"web_{current_user}_{int(time.time())}"
             _log(
-                "info",
-                f"Generated fallback device_id for web client",
+                "warning",
+                "Download request missing device_id - web clients must provide device identifier",
                 {
                     "user_id": current_user,
                     "file_id": file_id,
-                    "generated_device_id": device_id,
+                    "user_agent": request.headers.get("user-agent", "unknown"),
                 },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Device ID is required for file downloads",
             )
 
         # First try to find file in files_collection (regular chat files)
@@ -2369,7 +2438,7 @@ async def download_file(
                 {"user_id": current_user, "operation": "file_download"},
             )
 
-        # File not found - Enhanced logging for debugging
+        # File not found - Return proper 404 without fallback creation
         _log(
             "warning",
             f"File not found for download: {file_id}",
@@ -2383,23 +2452,10 @@ async def download_file(
             },
         )
         
-        # Additional debug: Check if this might be an avatar file
-        try:
-            from backend.config import settings
-            avatar_path = settings.DATA_ROOT / "avatars" / file_id
-            avatar_exists = avatar_path.exists() if hasattr(settings, 'DATA_ROOT') else False
-            if avatar_exists:
-                _log(
-                    "info",
-                    f"File exists as avatar: {file_id}",
-                    {"user_id": current_user, "file_id": file_id, "avatar_path": str(avatar_path)}
-                )
-        except Exception as e:
-            _log("debug", f"Avatar check failed: {e}")
-        
+        # CRITICAL: Return proper 404 without any fallback creation
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, 
-            detail="File not found - it may have been deleted or the file ID is incorrect"
+            detail="File not found - it may have been deleted or file ID is incorrect"
         )
 
     except HTTPException:
@@ -2775,119 +2831,29 @@ async def download_media(
     ),
     current_user: str = Depends(get_current_user),
 ):
-    """Download media with one-time token validation"""
+    """Download media with proper authentication - NO FALLBACK TOKEN LOGIC"""
     try:
-        # CRITICAL FIX: Fallback logic for web clients without device_id - NEVER return 422
+        # CRITICAL: Device ID is required for all downloads
         if not device_id:
-            # Generate a temporary device identifier for web clients
-            device_id = f"web_{current_user}_{int(time.time())}"
-            _log(
-                "info",
-                f"Generated fallback device_id for web client",
-                {
-                    "user_id": current_user,
-                    "token": token,
-                    "generated_device_id": device_id,
-                },
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Device ID is required for file downloads",
             )
-        
+
         # Get media lifecycle service
         media_service = get_media_lifecycle()
-
-        # Validate token
+        
+        # CRITICAL: Only validate actual download tokens, not fallback file_id tokens
         token_key = f"download_token:{token}"
         _log("info", f"Looking for download token", {"token_key": token_key, "token": token[:10] + "..."})
         token_data = await cache.get(token_key)
-
+        
         if not token_data:
-            # Check if token is actually a file_id (fallback for direct file downloads)
-            _log("info", f"Token not found, checking if it's a file_id", {"token": token[:10] + "..."})
-            
-            # Try to find file by file_id or _id (fallback for direct file downloads)
-            # files_collection is already imported at module level from db_proxy
-            try:
-                from bson import ObjectId
-                import asyncio
-                
-                file_doc = None
-                
-                # First try to find by file_id field
-                file_doc = await asyncio.wait_for(
-                    files_collection().find_one({"file_id": token}),
-                    timeout=30.0
-                )
-                
-                # If not found, try by _id field (handle both string and ObjectId)
-                if not file_doc:
-                    if ObjectId.is_valid(token):
-                        file_doc = await asyncio.wait_for(
-                            files_collection().find_one({"_id": ObjectId(token)}),
-                            timeout=30.0
-                        )
-                    else:
-                        file_doc = await asyncio.wait_for(
-                            files_collection().find_one({"_id": token}),
-                            timeout=30.0
-                        )
-                
-                if file_doc:
-                    _log("info", f"Found file by file_id/_id, creating fallback token", {
-                        "file_id": token,
-                        "filename": file_doc.get("filename", "unknown")
-                    })
-                    
-                    # Create fallback token data
-                    token_data = {
-                        "token": token,
-                        "file_id": token,
-                        "device_id": device_id,
-                        "user_id": current_user,
-                        "expires_at": time.time() + (24 * 60 * 60),  # 24 hours
-                        "max_downloads": 10,
-                        "download_count": 0
-                    }
-                    
-                    # Store the fallback token in cache for future use
-                    await cache.set(token_key, token_data, expire_seconds=24*60*60)
-                    
-                    # Create fallback media metadata for direct file downloads
-                    metadata_key = f"media_metadata:{token}"
-                    metadata = {
-                        "media_id": token,
-                        "sender_user_id": str(file_doc.get("owner_id", current_user)),
-                        "recipient_user_id": str(current_user),  # For direct downloads, current user is recipient
-                        "filename": file_doc.get("filename", "file"),
-                        "mime_type": file_doc.get("mime_type", "application/octet-stream"),
-                        "size": file_doc.get("size", 0),
-                        "storage_key": file_doc.get("storage_key"),
-                        "bucket": file_doc.get("bucket"),
-                        "region": file_doc.get("region"),
-                        "created_at": file_doc.get("created_at"),
-                    }
-                    await cache.set(metadata_key, metadata, expire_seconds=24*60*60)
-                    
-                    # Create fallback key package for direct file downloads
-                    key_package_key = f"media_key:{token}:{device_id}"
-                    key_package = {
-                        "encrypted_key": "direct_download",  # Placeholder for direct downloads
-                        "device_id": device_id,
-                        "created_at": time.time(),
-                    }
-                    await cache.set(key_package_key, key_package, expire_seconds=24*60*60)
-                    
-                    _log("info", f"Created and stored fallback download token with metadata")
-                else:
-                    _log("warning", f"File not found with file_id: {token}")
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail="File not found",
-                    )
-            except Exception as e:
-                _log("error", f"Error looking up file by file_id: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid or expired download token",
-                )
+            _log("warning", f"Download token not found or expired", {"token": token[:10] + "..."})
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired download token",
+            )
 
         # Parse token data - handle both old and new formats
         if isinstance(token_data, str):
@@ -2897,18 +2863,23 @@ async def download_media(
         if (token_data.get("download_count", 0) >= token_data.get("max_downloads", 1) or
             token_data.get("used", False)):
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired download token",
             )
-
-        # CRITICAL FIX: Allow web clients with generated device_id or skip device validation for web clients
-        # If device_id starts with "web_", it's a web client - allow access
-        if (not device_id.startswith("web_") and 
-            token_data.get("device_id") and 
-            token_data["device_id"] != device_id):
+        
+        # Validate device ID matches token
+        if token_data.get("device_id") != device_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Token not valid for this device",
+            )
+        
+        # Get file metadata from token
+        file_id = token_data.get("file_id")
+        if not file_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid download token",
             )
 
         # Get media metadata - handle both file_id and media_id field names
@@ -2996,113 +2967,39 @@ async def stream_media(
         token_key = f"download_token:{token}"
         _log("info", f"Looking for download token in stream", {"token_key": token_key, "token": token[:10] + "..."})
         token_data = await cache.get(token_key)
-
+        
         if not token_data:
-            # Check if token is actually a file_id (fallback for direct file downloads)
-            _log("info", f"Token not found in stream, checking if it's a file_id", {"token": token[:10] + "..."})
-            
-            # Try to find file by file_id or _id (fallback for direct file downloads)
-            # files_collection is already imported at module level from db_proxy
-            try:
-                from bson import ObjectId
-                import asyncio
-                
-                file_doc = None
-                
-                # First try to find by file_id field
-                file_doc = await asyncio.wait_for(
-                    files_collection().find_one({"file_id": token}),
-                    timeout=30.0
-                )
-                
-                # If not found, try by _id field (handle both string and ObjectId)
-                if not file_doc:
-                    if ObjectId.is_valid(token):
-                        file_doc = await asyncio.wait_for(
-                            files_collection().find_one({"_id": ObjectId(token)}),
-                            timeout=30.0
-                        )
-                    else:
-                        file_doc = await asyncio.wait_for(
-                            files_collection().find_one({"_id": token}),
-                            timeout=30.0
-                        )
-                
-                if file_doc:
-                    _log("info", f"Found file by file_id/_id in stream, creating fallback token", {
-                        "file_id": token,
-                        "filename": file_doc.get("filename", "unknown")
-                    })
-                    
-                    # Create fallback token data
-                    token_data = {
-                        "token": token,
-                        "file_id": token,
-                        "device_id": device_id,
-                        "user_id": current_user,
-                        "expires_at": time.time() + (24 * 60 * 60),  # 24 hours
-                        "max_downloads": 10,
-                        "download_count": 0
-                    }
-                    
-                    # Store the fallback token in cache for future use
-                    await cache.set(token_key, token_data, expire_seconds=24*60*60)
-                    
-                    # Create fallback media metadata for direct file downloads
-                    metadata_key = f"media_metadata:{token}"
-                    metadata = {
-                        "media_id": token,
-                        "sender_user_id": str(file_doc.get("owner_id", current_user)),
-                        "recipient_user_id": str(current_user),  # For direct downloads, current user is recipient
-                        "filename": file_doc.get("filename", "file"),
-                        "mime_type": file_doc.get("mime_type", "application/octet-stream"),
-                        "size": file_doc.get("size", 0),
-                        "storage_key": file_doc.get("storage_key"),
-                        "bucket": file_doc.get("bucket"),
-                        "region": file_doc.get("region"),
-                        "created_at": file_doc.get("created_at"),
-                    }
-                    await cache.set(metadata_key, metadata, expire_seconds=24*60*60)
-                    
-                    # Create fallback key package for direct file downloads
-                    key_package_key = f"media_key:{token}:{device_id}"
-                    key_package = {
-                        "encrypted_key": "direct_download",  # Placeholder for direct downloads
-                        "device_id": device_id,
-                        "created_at": time.time(),
-                    }
-                    await cache.set(key_package_key, key_package, expire_seconds=24*60*60)
-                    
-                    _log("info", f"Created and stored fallback download token in stream with metadata")
-                else:
-                    _log("warning", f"File not found with file_id in stream: {token}")
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail="File not found",
-                    )
-            except Exception as e:
-                _log("error", f"Error looking up file by file_id in stream: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid or expired download token",
-                )
+            _log("warning", f"Download token not found or expired in stream", {"token": token[:10] + "..."})
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired download token",
+            )
 
         # Parse token data - handle both old and new formats
         if isinstance(token_data, str):
             token_data = json.loads(token_data)
-
+        
         # Check if token is exhausted (download_count >= max_downloads or used flag)
         if (token_data.get("download_count", 0) >= token_data.get("max_downloads", 1) or
             token_data.get("used", False)):
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired download token",
             )
-
-        if token_data.get("device_id") and token_data["device_id"] != device_id:
+        
+        # Validate device ID matches token
+        if token_data.get("device_id") != device_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Token not valid for this device",
+            )
+        
+        # Get file metadata from token
+        file_id = token_data.get("file_id")
+        if not file_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid download token",
             )
 
         # Get media_id - handle both file_id and media_id field names
@@ -4747,14 +4644,26 @@ async def get_upload_progress(
 # WHATSAPP-STYLE ATTACHMENT ENDPOINTS
 @attach_router.post("/photos-videos/init")
 async def init_photo_video_upload(
-    request: Request, current_user: Optional[str] = Depends(get_current_user_optional)
+    request: Request, current_user: str = Depends(get_current_user)
 ):
     """Initialize photo/video upload - Uses /init endpoint under the hood"""
     import traceback
 
+    # CRITICAL: Reject anonymous uploads - user must be authenticated
+    if not current_user:
+        logger.error("[ATTACH] Upload attempt without authentication - rejecting")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "status": "ERROR",
+                "message": "Authentication required for file uploads",
+                "data": {"error_code": "AUTH_REQUIRED"},
+            },
+        )
+
     # Log when route is hit
     logger.info(
-        f"[ATTACH] POST /photos-videos/init endpoint hit by user: {current_user}"
+        f"[ATTACH] POST /photos-videos/init endpoint hit by authenticated user: {current_user}"
     )
 
     # Log incoming headers for debugging auth issues

@@ -370,7 +370,30 @@ def init_storage():
                 "S3_BUCKET environment variable is required but not set or empty. "
                 "Please configure S3_BUCKET in your .env file or environment variables."
             )
+        
+        # Validate AWS_REGION is configured for production
+        if not settings.AWS_REGION or settings.AWS_REGION.strip() == "":
+            raise RuntimeError(
+                "AWS_REGION environment variable is required but not set or empty. "
+                "Please configure AWS_REGION in your .env file or environment variables."
+            )
+        
+        # Validate AWS credentials are configured for production
+        if not settings.AWS_ACCESS_KEY_ID or settings.AWS_ACCESS_KEY_ID.strip() == "":
+            raise RuntimeError(
+                "AWS_ACCESS_KEY_ID environment variable is required but not set or empty. "
+                "Please configure AWS credentials in your .env file or environment variables."
+            )
+        
+        if not settings.AWS_SECRET_ACCESS_KEY or settings.AWS_SECRET_ACCESS_KEY.strip() == "":
+            raise RuntimeError(
+                "AWS_SECRET_ACCESS_KEY environment variable is required but not set or empty. "
+                "Please configure AWS credentials in your .env file or environment variables."
+            )
+        
         logger.info(f"[STARTUP] S3 Bucket validated: {settings.S3_BUCKET}")
+        logger.info(f"[STARTUP] AWS Region validated: {settings.AWS_REGION}")
+        logger.info("[STARTUP] AWS credentials validated")
 
         # settings module automatically initializes storage directories in __init__
         # Just validate that it's properly set up
