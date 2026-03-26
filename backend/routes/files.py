@@ -630,7 +630,7 @@ except ImportError:
 
 # Try to import from db_proxy, fallback to mock
 try:
-    from db_proxy import files_collection, users_collection, uploads_collection
+    from db_proxy import files_collection, users_collection, uploads_collection, chats_collection
 except ImportError:
     # Mock collections for testing
     class MockCollection:
@@ -663,6 +663,9 @@ except ImportError:
     def uploads_collection():
         return MockCollection()
 
+    def chats_collection():
+        return MockCollection()
+
 
 # Utility functions with local implementations (no external dependencies)
 def validate_path_injection(file_id: str) -> bool:
@@ -693,6 +696,7 @@ class MockLogger:
 
 
 _log = MockLogger()
+logger = logging.getLogger(__name__)
 
 
 # Real S3 client function
