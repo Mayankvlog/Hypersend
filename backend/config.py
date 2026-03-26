@@ -184,21 +184,17 @@ class Settings:
     # Load raw values with validation
     _raw_mongodb_uri = os.getenv("MONGODB_URI")
     _raw_database_name = os.getenv("DATABASE_NAME")
+    _raw_atlas_enabled = os.getenv("MONGODB_ATLAS_ENABLED", "true").lower() in ("true", "1", "yes")
 
-    # CRITICAL: Only check MONGODB_ATLAS_ENABLED once to prevent duplicates
-    _raw_atlas_enabled = os.getenv("MONGODB_ATLAS_ENABLED", "true").lower() == "true"
+    # CRITICAL: Enforce mock database disabled globally (except during testing)
+    _use_mock_db = os.getenv("USE_MOCK_DB", "false").lower() in ("true", "1", "yes")
+    if _use_mock_db and not TESTING:
+        logger.error("[CONFIG] CRITICAL: USE_MOCK_DB=true is not allowed in production")
+        raise RuntimeError(
+            "CRITICAL: USE_MOCK_DB must be 'false' - mock database is permanently disabled in production"
+        )
 
-    # Log environment loading order for debugging
-    logger.debug(
-        f"[CONFIG] Environment loading: MONGODB_URI={'SET' if _raw_mongodb_uri else 'NOT_SET'}, "
-        f"DATABASE_NAME={'SET' if _raw_database_name else 'NOT_SET'}, "
-        f"MONGODB_ATLAS_ENABLED={'SET' if os.getenv('MONGODB_ATLAS_ENABLED') else 'NOT_SET'}"
-    )
-
-    # Validation and auto-fixing
-    # During unit tests we may not have a valid Atlas URI; allow the
-    # configuration to proceed if TESTING is True. This prevents import-time
-    # failures when pytest loads modules from the backend package.
+    # Validate MongoDB Atlas configuration is present (required for production)
     if not _raw_mongodb_uri and not TESTING:
         raise RuntimeError(
             "CRITICAL: MONGODB_URI is required for MongoDB Atlas production deployment. "
