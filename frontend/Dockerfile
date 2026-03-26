@@ -1,16 +1,16 @@
-FROM debian:bookworm AS build
+FROM python:3.11-slim AS build
 
 # ✅ SECURITY: Use build args for flexibility and security updates
 
-# Production: override with API_BASE_URL=https://zaply.in.net/api/v1 in docker-compose build args
-ARG API_BASE_URL=https://zaply.in.net/api/v1
+# Production: override with API_BASE_URL=http://localhost:8000/api/v1 in docker-compose build args
+ARG API_BASE_URL=http://localhost:8000/api/v1
 
 # LOGIC FIX: Add VALIDATE_CERTIFICATES build arg for flexible SSL configuration
 # Production default: true (enforce valid SSL certificates)
 # Development: set to false to allow self-signed certs
 ARG VALIDATE_CERTIFICATES=true
-# dist-upgrade ensures all security patches including critical/high severity CVEs are applied
-# This ensures all CVEs in the base image layers are remediated before Flutter installation
+
+# Install system dependencies for Flutter
 RUN apt-get update && \
     apt-get dist-upgrade -y && \
     apt-get install -y --no-install-recommends \
@@ -19,6 +19,7 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/*
 
+# Install Flutter
 RUN git clone --depth 1 --branch 3.35.6 https://github.com/flutter/flutter.git /opt/flutter
 
 ENV FLUTTER_HOME=/opt/flutter
@@ -55,20 +56,22 @@ RUN sed -i 's|////# sourceMappingURL=flutter.js.map||g' build/web/flutter.js && 
 # ==============================
 # NGINX Production Server
 # ==============================
-FROM nginx:alpine
+FROM python:3.11-slim
 
-# ✅ SECURITY: Apply comprehensive security updates to nginx base image
-# Update alpine package manager and apply all security patches
-RUN apk update && \
-    apk upgrade && \
-    apk add --no-cache ca-certificates && \
-    rm -rf /var/cache/apk/*
+# ✅ SECURITY: Apply comprehensive security updates to base image
+# Update package manager and apply all security patches
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends nginx ca-certificates wget curl && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/*
 
 # Copy Flutter build
 COPY --from=build /app/build/web /usr/share/nginx/html
 
 # ✅ PRODUCTION NGINX CONFIG - Flutter Web Optimized + Security Headers
-# Use conf.d/default.conf (standard nginx:alpine location) instead of custom nginx.conf
+# Use conf.d/default.conf (standard nginx location)
 RUN printf '%s\n' \
     'server {' \
     '    listen 80;' \
