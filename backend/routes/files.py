@@ -714,12 +714,25 @@ def _get_s3_client():
             or not settings.AWS_ACCESS_KEY_ID
             or not settings.AWS_SECRET_ACCESS_KEY
         ):
-            _log("info", f"[S3] S3 not configured - missing credentials or bucket")
+            _log("warning", "[S3] S3 not properly configured - missing credentials or bucket")
             return None
 
-        # Create real S3 client with proper Config object
-        from botocore.config import Config
+        # Enhanced bucket validation
+        bucket_name = settings.S3_BUCKET
+        if not bucket_name or len(bucket_name) < 3:
+            _log("error", f"[S3] Invalid bucket name: {bucket_name}")
+            return None
+            
+        # Check for common bucket naming issues
+        if bucket_name.startswith('.'):
+            _log("error", f"[S3] Bucket name cannot start with dot: {bucket_name}")
+            return None
+            
+        if bucket_name.endswith('.'):
+            _log("error", f"[S3] Bucket name cannot end with dot: {bucket_name}")
+            return None
 
+        # Create boto3 Config object for better performance
         client_config = Config(
             max_pool_connections=50, retries={"max_attempts": 3, "mode": "adaptive"}
         )
@@ -730,14 +743,23 @@ def _get_s3_client():
             region_name=settings.AWS_REGION,
             config=client_config,
         )
-        _log("info", f"[S3] Real S3 client created for bucket: {settings.S3_BUCKET}")
+        _log("info", f"[S3] Real S3 client created for bucket: {bucket_name}")
+        
+        # Test bucket accessibility
+        try:
+            client.head_bucket(Bucket=bucket_name)
+            _log("info", f"[S3] Bucket accessibility confirmed: {bucket_name}")
+        except Exception as e:
+            _log("error", f"[S3] Bucket not accessible: {bucket_name} - {e}")
+            return None
+            
         return client
 
     except ImportError:
-        _log("info", f"[S3] Settings not available - returning None")
+        _log("warning", "[S3] boto3 not available - S3 features disabled")
         return None
     except Exception as e:
-        _log("error", f"[S3] Failed to create S3 client: {str(e)}")
+        _log("error", f"[S3] Failed to create S3 client: {e}")
         return None
 
 
@@ -2322,14 +2344,37 @@ async def download_file(
                 {"user_id": current_user, "operation": "file_download"},
             )
 
-        # File not found
+        # File not found - Enhanced logging for debugging
         _log(
             "warning",
             f"File not found for download: {file_id}",
-            {"user_id": current_user, "operation": "file_download"},
+            {
+                "user_id": current_user, 
+                "operation": "file_download",
+                "file_id": file_id,
+                "file_id_valid_objectid": ObjectId.is_valid(file_id),
+                "search_attempts": 4,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
         )
+        
+        # Additional debug: Check if this might be an avatar file
+        try:
+            from backend.config import settings
+            avatar_path = settings.DATA_ROOT / "avatars" / file_id
+            avatar_exists = avatar_path.exists() if hasattr(settings, 'DATA_ROOT') else False
+            if avatar_exists:
+                _log(
+                    "info",
+                    f"File exists as avatar: {file_id}",
+                    {"user_id": current_user, "file_id": file_id, "avatar_path": str(avatar_path)}
+                )
+        except Exception as e:
+            _log("debug", f"Avatar check failed: {e}")
+        
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="File not found - it may have been deleted or the file ID is incorrect"
         )
 
     except HTTPException:
