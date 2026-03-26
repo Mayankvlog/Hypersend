@@ -2779,7 +2779,33 @@ async def download_media(
                     
                     # Store the fallback token in cache for future use
                     await cache.set(token_key, token_data, expire_seconds=24*60*60)
-                    _log("info", f"Created and stored fallback download token")
+                    
+                    # Create fallback media metadata for direct file downloads
+                    metadata_key = f"media_metadata:{token}"
+                    metadata = {
+                        "media_id": token,
+                        "sender_user_id": str(file_doc.get("owner_id", current_user)),
+                        "recipient_user_id": str(current_user),  # For direct downloads, current user is recipient
+                        "filename": file_doc.get("filename", "file"),
+                        "mime_type": file_doc.get("mime_type", "application/octet-stream"),
+                        "size": file_doc.get("size", 0),
+                        "storage_key": file_doc.get("storage_key"),
+                        "bucket": file_doc.get("bucket"),
+                        "region": file_doc.get("region"),
+                        "created_at": file_doc.get("created_at"),
+                    }
+                    await cache.set(metadata_key, metadata, expire_seconds=24*60*60)
+                    
+                    # Create fallback key package for direct file downloads
+                    key_package_key = f"media_key:{token}:{device_id}"
+                    key_package = {
+                        "encrypted_key": "direct_download",  # Placeholder for direct downloads
+                        "device_id": device_id,
+                        "created_at": time.time(),
+                    }
+                    await cache.set(key_package_key, key_package, expire_seconds=24*60*60)
+                    
+                    _log("info", f"Created and stored fallback download token with metadata")
                 else:
                     _log("warning", f"File not found with file_id: {token}")
                     raise HTTPException(
@@ -2951,7 +2977,33 @@ async def stream_media(
                     
                     # Store the fallback token in cache for future use
                     await cache.set(token_key, token_data, expire_seconds=24*60*60)
-                    _log("info", f"Created and stored fallback download token in stream")
+                    
+                    # Create fallback media metadata for direct file downloads
+                    metadata_key = f"media_metadata:{token}"
+                    metadata = {
+                        "media_id": token,
+                        "sender_user_id": str(file_doc.get("owner_id", current_user)),
+                        "recipient_user_id": str(current_user),  # For direct downloads, current user is recipient
+                        "filename": file_doc.get("filename", "file"),
+                        "mime_type": file_doc.get("mime_type", "application/octet-stream"),
+                        "size": file_doc.get("size", 0),
+                        "storage_key": file_doc.get("storage_key"),
+                        "bucket": file_doc.get("bucket"),
+                        "region": file_doc.get("region"),
+                        "created_at": file_doc.get("created_at"),
+                    }
+                    await cache.set(metadata_key, metadata, expire_seconds=24*60*60)
+                    
+                    # Create fallback key package for direct file downloads
+                    key_package_key = f"media_key:{token}:{device_id}"
+                    key_package = {
+                        "encrypted_key": "direct_download",  # Placeholder for direct downloads
+                        "device_id": device_id,
+                        "created_at": time.time(),
+                    }
+                    await cache.set(key_package_key, key_package, expire_seconds=24*60*60)
+                    
+                    _log("info", f"Created and stored fallback download token in stream with metadata")
                 else:
                     _log("warning", f"File not found with file_id in stream: {token}")
                     raise HTTPException(
