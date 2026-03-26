@@ -2675,11 +2675,27 @@ async def process_media_ack(
 @router.get("/download/{token}")
 async def download_media(
     token: str,
-    device_id: str = Query(..., description="Device ID"),
+    device_id: Optional[str] = Query(
+        None, description="Device ID (optional for web clients)"
+    ),
     current_user: str = Depends(get_current_user),
 ):
     """Download media with one-time token validation"""
     try:
+        # CRITICAL FIX: Fallback logic for web clients without device_id - NEVER return 422
+        if not device_id:
+            # Generate a temporary device identifier for web clients
+            device_id = f"web_{current_user}_{int(time.time())}"
+            _log(
+                "info",
+                f"Generated fallback device_id for web client",
+                {
+                    "user_id": current_user,
+                    "token": token,
+                    "generated_device_id": device_id,
+                },
+            )
+        
         # Get media lifecycle service
         media_service = get_media_lifecycle()
 
@@ -2693,7 +2709,11 @@ async def download_media(
                 detail="Invalid or expired download token",
             )
 
-        if token_data["device_id"] != device_id:
+        # CRITICAL FIX: Allow web clients with generated device_id or skip device validation for web clients
+        # If device_id starts with "web_", it's a web client - allow access
+        if (not device_id.startswith("web_") and 
+            token_data.get("device_id") and 
+            token_data["device_id"] != device_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Token not valid for this device",
