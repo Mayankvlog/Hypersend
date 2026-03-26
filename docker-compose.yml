@@ -1,3 +1,9 @@
+# Docker Hub authentication to avoid rate limits
+# Using environment variables from .env file
+x-docker-hub-auth: &docker-hub-auth
+  DOCKERHUB_USERNAME: ${DOCKERHUB_USERNAME}
+  DOCKERHUB_TOKEN: ${DOCKERHUB_TOKEN}
+
 services:
   nginx:
     image: nginx:alpine
