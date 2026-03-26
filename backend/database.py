@@ -81,7 +81,7 @@ async def init_database():
         mongodb_uri = os.getenv("MONGODB_URI") or settings.MONGODB_URI
         database_name = os.getenv("DATABASE_NAME") or settings.DATABASE_NAME
 
-        # CRITICAL: NO FALLBACKS - MongoDB Atlas is REQUIRED
+        # CRITICAL: NO FALLBACKS - MongoDB Atlas is REQUIRED (no TESTING exceptions)
         if not mongodb_atlas_enabled:
             raise RuntimeError(
                 'MONGODB_ATLAS_ENABLED must be "true" - mock database is permanently disabled'
@@ -97,10 +97,8 @@ async def init_database():
                 "DATABASE_NAME is required for Atlas-only operation - mock database is permanently disabled"
             )
 
-        # Validate URI is Atlas format (mongodb+srv://) or allow mongodb:// for testing
-        if not mongodb_uri.startswith("mongodb+srv://") and not mongodb_uri.startswith(
-            "mongodb://"
-        ):
+        # Validate URI is Atlas format only (mongodb+srv:// required)
+        if not mongodb_uri.startswith("mongodb+srv://"):
             raise RuntimeError(
                 f'MONGODB_URI must be Atlas URI starting with "mongodb+srv://". Got: {mongodb_uri[:60]}...'
             )
@@ -279,10 +277,8 @@ async def connect_db():
             "MongoDB Atlas configuration is required - MONGODB_URI and DATABASE_NAME must be set"
         )
 
-    # Validate URI is Atlas format or allow mongodb:// for testing
-    if not mongodb_uri.startswith("mongodb+srv://") and not mongodb_uri.startswith(
-        "mongodb://"
-    ):
+    # Validate URI is Atlas format only (mongodb+srv:// required)
+    if not mongodb_uri.startswith("mongodb+srv://"):
         raise RuntimeError(
             f'MONGODB_URI must be Atlas URI starting with "mongodb+srv://". Got: {mongodb_uri[:60]}...'
         )

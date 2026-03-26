@@ -102,30 +102,17 @@ def _sanitize_aws_region(value: str) -> str:
 
 
 def _validate_mongodb_uri(uri: str) -> str:
-    """Validate and auto-fix MongoDB URI for Atlas production use"""
+    """Validate and enforce MongoDB Atlas URI (mongodb+srv:// only)"""
     uri = uri.strip()
 
     # Strip quotes if present
     uri = _strip_quotes(uri)
 
-    # Allow mongodb:// for testing/development environments
-    if not uri.startswith("mongodb+srv://") and not uri.startswith("mongodb://"):
-        # For production, require mongodb+srv://
-        if not TESTING:
-            raise ValueError(
-                f"MONGODB_URI must be Atlas URI starting with 'mongodb+srv://'. Got: {uri[:60]}..."
-            )
-        # For testing, allow mongodb:// but warn
-        logger.warning(
-            f"[CONFIG] Using non-Atlas MongoDB URI for testing: {uri[:40]}..."
+    # CRITICAL: Only allow mongodb+srv:// URIs - no localhost, no mongodb://
+    if not uri.startswith("mongodb+srv://"):
+        raise RuntimeError(
+            f"MONGODB_URI must be Atlas URI starting with 'mongodb+srv://'. Got: {uri[:60]}..."
         )
-
-    # Check scheme - handle both mongodb:// and mongodb+srv://
-    if uri.startswith("mongodb://"):
-        # For testing, normalize mongodb:// to mongodb+srv:// if needed
-        if TESTING and not uri.startswith("mongodb+srv://"):
-            # Don't convert, just pass through for testing
-            pass
 
     # Parse URI to check and auto-append missing parameters
     parsed = urlparse(uri)
@@ -154,7 +141,7 @@ def _validate_mongodb_uri(uri: str) -> str:
             )
         )
         logger.info(
-            "[CONFIG] MongoDB URI auto-fixed with retryWrites=true and w=majority"
+            "[CONFIG] MongoDB Atlas URI auto-fixed with retryWrites=true and w=majority"
         )
 
     return uri
@@ -186,27 +173,27 @@ class Settings:
     _raw_database_name = os.getenv("DATABASE_NAME")
     _raw_atlas_enabled = os.getenv("MONGODB_ATLAS_ENABLED", "true").lower() in ("true", "1", "yes")
 
-    # CRITICAL: Enforce mock database disabled globally (except during testing)
+    # CRITICAL: Enforce mock database disabled globally (never allowed)
     _use_mock_db = os.getenv("USE_MOCK_DB", "false").lower() in ("true", "1", "yes")
-    if _use_mock_db and not TESTING:
-        logger.error("[CONFIG] CRITICAL: USE_MOCK_DB=true is not allowed in production")
+    if _use_mock_db:
+        logger.error("[CONFIG] CRITICAL: USE_MOCK_DB is permanently disabled")
         raise RuntimeError(
-            "CRITICAL: USE_MOCK_DB must be 'false' - mock database is permanently disabled in production"
+            "CRITICAL: USE_MOCK_DB must be 'false' - mock database is permanently disabled"
         )
 
-    # Validate MongoDB Atlas configuration is present (required for production)
-    if not _raw_mongodb_uri and not TESTING:
+    # Validate MongoDB Atlas configuration is present (required)
+    if not _raw_mongodb_uri:
         raise RuntimeError(
-            "CRITICAL: MONGODB_URI is required for MongoDB Atlas production deployment. "
+            "CRITICAL: MONGODB_URI is required for MongoDB Atlas deployment. "
             "Format: mongodb+srv://user:password@cluster.mongodb.net/db?retryWrites=true&w=majority"
         )
 
-    if not _raw_database_name and not TESTING:
+    if not _raw_database_name:
         raise RuntimeError("CRITICAL: DATABASE_NAME is required for MongoDB Atlas.")
 
-    if not _raw_atlas_enabled and not TESTING:
+    if not _raw_atlas_enabled:
         raise RuntimeError(
-            "CRITICAL: MONGODB_ATLAS_ENABLED must be 'true' for production (no local MongoDB allowed)."
+            "CRITICAL: MONGODB_ATLAS_ENABLED must be 'true' for MongoDB Atlas only."
         )
 
     # Validate and auto-fix URI
