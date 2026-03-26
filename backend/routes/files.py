@@ -672,8 +672,8 @@ def validate_path_injection(file_id: str) -> bool:
     """Basic path injection validation"""
     if not file_id:
         return False
-    # Check for dangerous patterns
-    dangerous_patterns = ["..", "\\", "/", "\x00"]
+    # Check for dangerous patterns (allow forward slashes as they're valid in file IDs)
+    dangerous_patterns = ["..", "\\", "\x00"]
     return not any(pattern in file_id for pattern in dangerous_patterns)
 
 
