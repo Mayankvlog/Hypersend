@@ -346,6 +346,12 @@ class Settings:
     )  # Backend listens on 8000, Nginx proxies to it
     # Production API base URL - must use HTTPS domain
     API_BASE_URL: str = os.getenv("API_BASE_URL", "https://zaply.in.net/api/v1")
+    
+    # Override with production environment variables from user
+    API_BASE_URL = os.getenv("API_BASE_URL") or "https://zaply.in.net/api/v1"
+    
+    # Application URL for frontend
+    APP_URL: str = os.getenv("APP_URL", "https://zaply.in.net")
 
     # Rate Limiting
     RATE_LIMIT_PER_USER: int = int(os.getenv("RATE_LIMIT_PER_USER", "100"))

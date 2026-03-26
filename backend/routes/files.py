@@ -4615,11 +4615,11 @@ async def process_media_ack(
 
 
 
-@router.get("/download/{token}")
+@router.get("/download/{file_id}")
 
 async def download_media(
 
-    token: str,
+    file_id: str,
 
     device_id: Optional[str] = Query(
 
@@ -4631,15 +4631,13 @@ async def download_media(
 
 ):
 
-    """Download media with proper authentication - NO FALLBACK TOKEN LOGIC"""
+    """Download media using direct S3 presigned URL - NO TOKEN SYSTEM"""
 
     try:
 
         # ENHANCED: Generate device_id when missing to improve compatibility
 
         if not device_id:
-
-            # Generate a temporary device_id for compatibility
 
             device_id = f"media_temp_{int(time.time())}"
 
@@ -4651,7 +4649,7 @@ async def download_media(
 
                 {
 
-                    "token": token[:10] + "...",
+                    "file_id": file_id,
 
                     "generated_device_id": device_id,
 
@@ -4661,157 +4659,17 @@ async def download_media(
 
 
 
-        # Get media lifecycle service
+        # Get file metadata from database
 
-        media_service = get_media_lifecycle()
+        file_doc = await files_collection().find_one({"_id": file_id})
 
-        
-
-        # CRITICAL: Only validate actual download tokens, not fallback file_id tokens
-
-        token_key = f"download_token:{token}"
-
-        _log("info", f"Looking for download token", {"token_key": token_key, "token": token[:10] + "..."})
-
-        token_data = await cache.get(token_key)
-
-        
-
-        if not token_data:
-
-            _log("warning", f"Download token not found", {"token": token[:10] + "..."})
+        if not file_doc:
 
             raise HTTPException(
 
                 status_code=status.HTTP_404_NOT_FOUND,
 
-                detail="Download token not found",
-
-            )
-
-
-
-        # Parse token data - handle both old and new formats
-
-        if isinstance(token_data, str):
-
-            token_data = json.loads(token_data)
-
-        
-
-        # Check if token is expired (expires_at validation)
-
-        expires_at = token_data.get("expires_at")
-
-        if expires_at:
-
-            try:
-
-                if isinstance(expires_at, str):
-
-                    expires_at = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
-
-                elif expires_at.tzinfo is None:
-
-                    expires_at = expires_at.replace(tzinfo=timezone.utc)
-
-                
-
-                if expires_at < datetime.now(timezone.utc):
-
-                    _log("warning", f"Download token expired", {"token": token[:10] + "..."})
-
-                    raise HTTPException(
-
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-
-                        detail="Download token expired",
-
-                    )
-
-            except Exception as e:
-
-                _log("error", f"Token expiration validation error: {e}", {"token": token[:10] + "..."})
-
-                # Continue without expiration check if parsing fails
-
-        
-
-        # Check if token is exhausted (download_count >= max_downloads or used flag)
-
-        if (token_data.get("download_count", 0) >= token_data.get("max_downloads", 1) or
-
-            token_data.get("used", False)):
-
-            raise HTTPException(
-
-                status_code=status.HTTP_401_UNAUTHORIZED,
-
-                detail="Download token exhausted",
-
-            )
-
-        
-
-        # ENHANCED: Remove strict device_id validation - allow any device
-
-        # WhatsApp-like behavior: tokens work across devices
-
-        _log("info", f"Device validation bypassed for WhatsApp-like behavior", {
-
-            "token_device_id": token_data.get("device_id"),
-
-            "request_device_id": device_id,
-
-            "file_id": file_id
-
-        })
-
-        
-
-        # Get file metadata from token
-
-        file_id = token_data.get("file_id")
-
-        if not file_id:
-
-            raise HTTPException(
-
-                status_code=status.HTTP_404_NOT_FOUND,
-
-                detail="File not found in token",
-
-            )
-
-
-
-        # Get media metadata - handle both file_id and media_id field names
-
-        media_id = token_data.get('media_id') or token_data.get('file_id')
-
-        if not media_id:
-
-            raise HTTPException(
-
-                status_code=status.HTTP_400_BAD_REQUEST,
-
-                detail="Invalid token: missing media_id",
-
-            )
-
-        
-
-        metadata_key = f"media_metadata:{media_id}"
-
-        metadata = await cache.get(metadata_key)
-
-
-
-        if not metadata:
-
-            raise HTTPException(
-
-                status_code=status.HTTP_404_NOT_FOUND, detail="Media not found"
+                detail="File not found",
 
             )
 
@@ -4821,9 +4679,9 @@ async def download_media(
 
         if (
 
-            metadata["sender_user_id"] != current_user
+            file_doc.get("sender_user_id") != current_user
 
-            and metadata["recipient_user_id"] != current_user
+            and file_doc.get("recipient_user_id") != current_user
 
         ):
 
@@ -4835,61 +4693,79 @@ async def download_media(
 
 
 
-        # Get encrypted media key for device
+        # Get S3 client
 
-        key_package_key = f"media_key:{media_id}:{device_id}"
+        s3_client = _get_s3_client()
 
-        key_package = await cache.get(key_package_key)
-
-
-
-        if not key_package:
+        if not s3_client:
 
             raise HTTPException(
 
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
 
-                detail="Media key not found for device",
+                detail="S3 service not available",
 
             )
 
 
 
-        # Mark token as used (one-time use) - handle both formats
+        # Get S3 key from file metadata
 
-        if "download_count" in token_data:
+        s3_key = file_doc.get("s3_key")
 
-            # New format - increment download count
+        if not s3_key:
 
-            token_data["download_count"] += 1
+            raise HTTPException(
 
-        else:
+                status_code=status.HTTP_404_NOT_FOUND,
 
-            # Old format - set used flag
+                detail="File S3 key not found",
 
-            token_data["used"] = True
+            )
 
-        
 
-        await cache.set(token_key, token_data, expire_seconds=60)
+
+        # Generate presigned URL for download (5 minutes expiry)
+
+        bucket = settings.S3_BUCKET
+
+        s3_url = s3_client.generate_presigned_url(
+
+            'get_object',
+
+            Params={'Bucket': bucket, 'Key': s3_key},
+
+            ExpiresIn=300  # 5 minutes
+
+        )
+
+
+
+        _log("info", f"Generated S3 presigned download URL", {
+
+            "file_id": file_id,
+
+            "device_id": device_id,
+
+            "s3_key": s3_key,
+
+        })
 
 
 
         return {
 
-            "media_id": media_id,
+            "status": "SUCCESS",
 
-            "device_id": device_id,
+            "status_code": 200,
 
-            "key_package": key_package,
+            "data": {
 
-            "metadata": metadata,
+                "download_url": s3_url
 
-            "download_url": f"/api/v1/files/stream/{token}",
+            }
 
         }
-
-
 
     except HTTPException:
 
@@ -4901,9 +4777,9 @@ async def download_media(
 
             "error",
 
-            f"Failed to download media: {str(e)}",
+            f"Failed to generate download URL: {str(e)}",
 
-            {"user_id": current_user, "operation": "download_media"},
+            {"user_id": current_user, "file_id": file_id, "operation": "download_media"},
 
         )
 
@@ -4911,7 +4787,7 @@ async def download_media(
 
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
 
-            detail="Failed to download media",
+            detail="Failed to generate download URL",
 
         )
 
@@ -4919,11 +4795,13 @@ async def download_media(
 
 
 
-@router.get("/stream/{token}")
+
+
+@router.get("/stream/{file_id}")
 
 async def stream_media(
 
-    token: str,
+    file_id: str,
 
     device_id: str = Query(..., description="Device ID"),
 
@@ -4931,259 +4809,105 @@ async def stream_media(
 
 ):
 
-    """Stream media download (no buffering)"""
+    """Stream media download using S3 presigned URL - NO TOKEN SYSTEM"""
 
     try:
 
-        # Get media lifecycle service
+        # Get file metadata from database
 
-        media_service = get_media_lifecycle()
+        file_doc = await files_collection().find_one({"_id": file_id})
+
+        if not file_doc:
+
+            raise HTTPException(
+
+                status_code=status.HTTP_404_NOT_FOUND,
+
+                detail="File not found",
+
+            )
 
 
 
-        # Get S3 client (may be None if S3 is disabled)
+        # Check ownership
+
+        if (
+
+            file_doc.get("sender_user_id") != current_user
+
+            and file_doc.get("recipient_user_id") != current_user
+
+        ):
+
+            raise HTTPException(
+
+                status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+
+            )
+
+
+
+        # Get S3 client
 
         s3_client = _get_s3_client()
 
+        if not s3_client:
+
+            raise HTTPException(
+
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+
+                detail="S3 service not available",
+
+            )
 
 
-        # Validate token
 
-        token_key = f"download_token:{token}"
+        # Get S3 key from file metadata
 
-        _log("info", f"Looking for download token in stream", {"token_key": token_key, "token": token[:10] + "..."})
+        s3_key = file_doc.get("s3_key")
 
-        token_data = await cache.get(token_key)
-
-        
-
-        if not token_data:
-
-            _log("warning", f"Download token not found in stream", {"token": token[:10] + "..."})
+        if not s3_key:
 
             raise HTTPException(
 
                 status_code=status.HTTP_404_NOT_FOUND,
 
-                detail="Download token not found",
+                detail="File S3 key not found",
 
             )
 
 
 
-        # Parse token data - handle both old and new formats
+        # Generate presigned URL for streaming (5 minutes expiry)
 
-        if isinstance(token_data, str):
+        bucket = settings.S3_BUCKET
 
-            token_data = json.loads(token_data)
+        s3_url = s3_client.generate_presigned_url(
 
-        
+            'get_object',
 
-        # Check if token is expired (expires_at validation)
+            Params={'Bucket': bucket, 'Key': s3_key},
 
-        expires_at = token_data.get("expires_at")
+            ExpiresIn=300  # 5 minutes
 
-        if expires_at:
+        )
 
-            try:
 
-                if isinstance(expires_at, str):
 
-                    expires_at = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+        _log("info", f"Generated S3 presigned stream URL", {
 
-                elif expires_at.tzinfo is None:
+            "file_id": file_id,
 
-                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+            "device_id": device_id,
 
-                
-
-                if expires_at < datetime.now(timezone.utc):
-
-                    _log("warning", f"Download token expired in stream", {"token": token[:10] + "..."})
-
-                    raise HTTPException(
-
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-
-                        detail="Download token expired",
-
-                    )
-
-            except Exception as e:
-
-                _log("error", f"Token expiration validation error in stream: {e}", {"token": token[:10] + "..."})
-
-                # Continue without expiration check if parsing fails
-
-        
-
-        # Check if token is exhausted (download_count >= max_downloads or used flag)
-
-        if (token_data.get("download_count", 0) >= token_data.get("max_downloads", 1) or
-
-            token_data.get("used", False)):
-
-            raise HTTPException(
-
-                status_code=status.HTTP_401_UNAUTHORIZED,
-
-                detail="Download token exhausted",
-
-            )
-
-        
-
-        # ENHANCED: Remove strict device_id validation - allow any device
-
-        # WhatsApp-like behavior: tokens work across devices
-
-        _log("info", f"Device validation bypassed in stream for WhatsApp-like behavior", {
-
-            "token_device_id": token_data.get("device_id"),
-
-            "request_device_id": device_id,
-
-            "token": token[:10] + "..."
+            "s3_key": s3_key,
 
         })
 
-        
 
-        # Get file metadata from token
 
-        file_id = token_data.get("file_id")
-
-        if not file_id:
-
-            raise HTTPException(
-
-                status_code=status.HTTP_404_NOT_FOUND,
-
-                detail="File not found in token",
-
-            )
-
-
-
-        # Get media_id - handle both file_id and media_id field names
-
-        media_id = token_data.get('media_id') or token_data.get('file_id')
-
-        if not media_id:
-
-            raise HTTPException(
-
-                status_code=status.HTTP_400_BAD_REQUEST,
-
-                detail="Invalid token: missing media_id",
-
-            )
-
-
-
-        # S3 is disabled - proceed with local storage logic
-
-        # Stream all chunks
-
-        metadata_key = f"media_metadata:{media_id}"
-
-        metadata = await cache.get(metadata_key)
-
-
-
-        if not metadata:
-
-            raise HTTPException(
-
-                status_code=status.HTTP_404_NOT_FOUND, detail="Media not found"
-
-            )
-
-
-
-        chunk_count = metadata["chunk_count"]
-
-
-
-        async def generate_chunks():
-
-            for chunk_index in range(chunk_count):
-
-                chunk_key = f"media/{media_id}/chunk_{chunk_index}"
-
-
-
-                try:
-
-                    if not s3_client:
-
-                        raise HTTPException(
-
-                            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-
-                            detail="S3 storage is unavailable",
-
-                        )
-
-                    obj = s3_client.get_object(
-
-                        Bucket=_get_sanitized_bucket_name(), Key=chunk_key
-
-                    )
-
-
-
-                    # Stream the encrypted data
-
-                    chunk_data = obj["Body"].read()
-
-                    yield chunk_data
-
-
-
-                except Exception as e:
-
-                    _log(
-
-                        "error",
-
-                        f"Failed to stream chunk {chunk_index}: {str(e)}",
-
-                        {
-
-                            "user_id": current_user,
-
-                            "media_id": media_id,
-
-                            "chunk_index": chunk_index,
-
-                        },
-
-                    )
-
-                    break
-
-
-
-        return StreamingResponse(
-
-            generate_chunks(),
-
-            media_type="application/octet-stream",
-
-            headers={
-
-                "Content-Disposition": f"attachment; filename=media_{media_id}",
-
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-
-                "Pragma": "no-cache",
-
-                "Expires": "0",
-
-            },
-
-        )
+        return RedirectResponse(url=s3_url, status_code=302)
 
 
 
@@ -5197,9 +4921,9 @@ async def stream_media(
 
             "error",
 
-            f"Failed to stream media: {str(e)}",
+            f"Failed to generate stream URL: {str(e)}",
 
-            {"user_id": current_user, "operation": "stream_media"},
+            {"user_id": current_user, "file_id": file_id, "operation": "stream_media"},
 
         )
 
@@ -5207,9 +4931,16 @@ async def stream_media(
 
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
 
-            detail="Failed to stream media",
+            detail="Failed to generate stream URL",
 
         )
+
+
+
+
+
+
+
 
 
 
