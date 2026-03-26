@@ -2734,7 +2734,7 @@ async def download_media(
             _log("info", f"Token not found, checking if it's a file_id", {"token": token[:10] + "..."})
             
             # Try to find file by file_id
-            from .data.files import files_collection
+            # files_collection is already imported at module level from db_proxy
             try:
                 file_doc = await files_collection().find_one({"file_id": token})
                 if file_doc:
@@ -2883,7 +2883,7 @@ async def stream_media(
             _log("info", f"Token not found in stream, checking if it's a file_id", {"token": token[:10] + "..."})
             
             # Try to find file by file_id
-            from .data.files import files_collection
+            # files_collection is already imported at module level from db_proxy
             try:
                 file_doc = await files_collection().find_one({"file_id": token})
                 if file_doc:
@@ -5616,10 +5616,10 @@ async def get_file_versions(
     """Get multiple file versions (300 Multiple Choices)"""
     try:
         # Check if file has multiple versions
-        from ..db_proxy import files_collection as files_coll
+        # files_collection is already imported at module level from db_proxy
 
         files = (
-            await files_coll()
+            await files_collection()
             .find({"original_id": file_id, "is_deleted": False})
             .to_list(length=None)
         )
@@ -5677,7 +5677,7 @@ async def redirect_upload(
 ):
     """Handle upload ID rotation (301 Moved Permanently)"""
     try:
-        from database import files_collection
+        # files_collection is already imported at module level from db_proxy
 
         # Check if upload ID has been rotated
         upload_record = await files_collection().find_one(
@@ -5720,7 +5720,7 @@ async def process_file_upload(
 ):
     """Process file after upload (303 See Other - POST to GET redirect)"""
     try:
-        from database import files_collection
+        # files_collection is already imported at module level from db_proxy
 
         # Start file processing
         file_record = await files_collection().find_one(
@@ -5771,7 +5771,7 @@ async def relocate_file_permanently(
 ):
     """Permanently relocate file (308 Permanent Redirect)"""
     try:
-        from database import files_collection
+        # files_collection is already imported at module level from db_proxy
 
         # Update file location permanently
         file_record = await files_collection().find_one(
@@ -5828,7 +5828,7 @@ async def temporary_upload_redirect(
 ):
     """Temporary redirect for upload (307 Temporary Redirect)"""
     try:
-        from database import files_collection
+        # files_collection is already imported at module level from db_proxy
 
         # Check upload exists
         upload_doc = await uploads_collection().find_one({"_id": upload_id})
