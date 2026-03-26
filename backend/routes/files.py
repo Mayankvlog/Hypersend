@@ -1406,17 +1406,10 @@ async def upload_chunk_put(
 async def complete_upload(
     upload_id: str,
     request: Request,
-    current_user: Optional[str] = Depends(get_current_user_optional),
+    current_user: str = Depends(get_current_user),
 ):
     """Complete upload function for test compatibility"""
     try:
-        # CRITICAL: Reject anonymous uploads - user must be authenticated
-        if not current_user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required for file upload completion",
-            )
-
         # Validate upload_id
         if (
             not upload_id
@@ -1780,25 +1773,77 @@ async def download_file(
 
         _log(
             "info",
-            f"File download request - device_id {'present' if device_id else 'missing (web client)'}",
+            f'File download request - device_id {"present" if device_id else "missing (web client)"}',
             log_data,
         )
 
-        # CRITICAL: No fallback device_id logic - device_id is required for proper tracking
+        # ENHANCED: Allow web clients without device_id for better compatibility
+        _log(
+            "info",
+            f"Download request - current_user: '{current_user}', device_id: '{device_id}', file_id: '{file_id}'",
+            {
+                "user_id": current_user,
+                "file_id": file_id,
+                "device_id": device_id,
+                "has_device_id": device_id is not None,
+                "user_agent": request.headers.get("user-agent", "unknown"),
+            },
+        )
+
         if not device_id:
+            # Check if this is a web client based on User-Agent
+            user_agent = request.headers.get("user-agent", "").lower()
+            is_web_client = any(browser in user_agent for browser in ["mozilla", "chrome", "safari", "firefox", "edge"])
+            
+            # Debug logging
             _log(
-                "warning",
-                "Download request missing device_id - web clients must provide device identifier",
-                {
-                    "user_id": current_user,
-                    "file_id": file_id,
-                    "user_agent": request.headers.get("user-agent", "unknown"),
-                },
+                "info",
+                f"Device ID check - current_user: '{current_user}', is_web_client: {is_web_client}, user_agent: '{user_agent}'",
+                {"user_id": current_user, "user_agent": user_agent}
             )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Device ID is required for file downloads",
-            )
+            
+            if is_web_client and current_user:
+                # Generate a temporary device ID for web clients
+                device_id = f"web_{current_user[:8]}_{int(time.time())}"
+                _log(
+                    "info",
+                    "Generated temporary device_id for web client",
+                    {
+                        "user_id": current_user,
+                        "file_id": file_id,
+                        "generated_device_id": device_id,
+                        "user_agent": request.headers.get("user-agent", "unknown"),
+                    },
+                )
+            elif not current_user:
+                # Handle case where user is not authenticated
+                _log(
+                    "warning",
+                    "No authenticated user for download request",
+                    {
+                        "file_id": file_id,
+                        "user_agent": request.headers.get("user-agent", "unknown"),
+                    },
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required for file downloads",
+                )
+            else:
+                # For mobile/native clients, device_id is still required
+                _log(
+                    "warning",
+                    "Download request missing device_id - mobile clients must provide device identifier",
+                    {
+                        "user_id": current_user,
+                        "file_id": file_id,
+                        "user_agent": request.headers.get("user-agent", "unknown"),
+                    },
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Device ID is required for file downloads",
+                )
 
         # First try to find file in files_collection (regular chat files)
         import asyncio
@@ -1829,6 +1874,61 @@ async def download_file(
                     files_collection().find_one({"file_id": file_id}),
                     timeout=30.0,
                 )
+
+        if file_doc:
+            # Log file record details for debugging
+            _log(
+                "info",
+                f"File found in database: {file_id}",
+                {
+                    "file_id": file_id,
+                    "has_file_doc": True,
+                    "file_doc_keys": list(file_doc.keys()) if file_doc else None,
+                }
+            )
+            # Continue with file processing...
+        else:
+            # Log file not found
+            _log(
+                "info",
+                f"File not found in database: {file_id}",
+                {
+                    "file_id": file_id,
+                    "has_file_doc": False,
+                }
+            )
+            return create_error_response(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="File not found",
+                error_code="FILE_NOT_FOUND",
+                details={"file_id": file_id},
+            )
+
+    except HTTPException as he:
+        # Re-raise HTTP exceptions (already formatted)
+        _log(
+            "warning",
+            f"HTTP Exception in download: {he.status_code} - {he.detail}",
+            {"file_id": file_id, "exception": str(he)}
+        )
+        raise he
+    except Exception as e:
+        # Catch-all for any other exceptions
+        _log(
+            "error",
+            f"Unexpected error in download: {str(e)}",
+            {
+                "file_id": file_id,
+                "exception_type": type(e).__name__,
+                "exception_message": str(e),
+            }
+        )
+        return create_error_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Internal server error during file download",
+            error_code="DOWNLOAD_ERROR",
+            details={"file_id": file_id, "error": str(e)},
+        )
 
         if file_doc:
             # Log file record details for debugging
@@ -2693,7 +2793,7 @@ async def initiate_media_upload(
 
 @router.post("/init")
 async def upload_init(
-    request: Request, current_user: Optional[str] = Depends(get_current_user_optional)
+    request: Request, current_user: str = Depends(get_current_user)
 ):
     """Initialize file upload - compatibility endpoint for tests"""
     try:
