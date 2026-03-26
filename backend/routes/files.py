@@ -2723,7 +2723,19 @@ async def download_media(
         token_key = f"download_token:{token}"
         token_data = await cache.get(token_key)
 
-        if not token_data or token_data["used"]:
+        if not token_data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired download token",
+            )
+
+        # Parse token data - handle both old and new formats
+        if isinstance(token_data, str):
+            token_data = json.loads(token_data)
+        
+        # Check if token is exhausted (download_count >= max_downloads or used flag)
+        if (token_data.get("download_count", 0) >= token_data.get("max_downloads", 1) or
+            token_data.get("used", False)):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid or expired download token",
@@ -2739,8 +2751,15 @@ async def download_media(
                 detail="Token not valid for this device",
             )
 
-        # Get media metadata
-        metadata_key = f"media_metadata:{token_data['media_id']}"
+        # Get media metadata - handle both file_id and media_id field names
+        media_id = token_data.get('media_id') or token_data.get('file_id')
+        if not media_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid token: missing media_id",
+            )
+        
+        metadata_key = f"media_metadata:{media_id}"
         metadata = await cache.get(metadata_key)
 
         if not metadata:
@@ -2758,7 +2777,7 @@ async def download_media(
             )
 
         # Get encrypted media key for device
-        key_package_key = f"media_key:{token_data['media_id']}:{device_id}"
+        key_package_key = f"media_key:{media_id}:{device_id}"
         key_package = await cache.get(key_package_key)
 
         if not key_package:
@@ -2767,12 +2786,18 @@ async def download_media(
                 detail="Media key not found for device",
             )
 
-        # Mark token as used (one-time use)
-        token_data["used"] = True
+        # Mark token as used (one-time use) - handle both formats
+        if "download_count" in token_data:
+            # New format - increment download count
+            token_data["download_count"] += 1
+        else:
+            # Old format - set used flag
+            token_data["used"] = True
+        
         await cache.set(token_key, token_data, expire_seconds=60)
 
         return {
-            "media_id": token_data["media_id"],
+            "media_id": media_id,
             "device_id": device_id,
             "key_package": key_package,
             "metadata": metadata,
@@ -2811,19 +2836,37 @@ async def stream_media(
         token_key = f"download_token:{token}"
         token_data = await cache.get(token_key)
 
-        if not token_data or token_data["used"]:
+        if not token_data:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid or expired download token",
             )
 
-        if token_data["device_id"] != device_id:
+        # Parse token data - handle both old and new formats
+        if isinstance(token_data, str):
+            token_data = json.loads(token_data)
+
+        # Check if token is exhausted (download_count >= max_downloads or used flag)
+        if (token_data.get("download_count", 0) >= token_data.get("max_downloads", 1) or
+            token_data.get("used", False)):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired download token",
+            )
+
+        if token_data.get("device_id") and token_data["device_id"] != device_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Token not valid for this device",
             )
 
-        media_id = token_data["media_id"]
+        # Get media_id - handle both file_id and media_id field names
+        media_id = token_data.get('media_id') or token_data.get('file_id')
+        if not media_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid token: missing media_id",
+            )
 
         # S3 is disabled - proceed with local storage logic
         # Stream all chunks

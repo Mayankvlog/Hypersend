@@ -3,6 +3,8 @@ from typing import Optional
 from datetime import datetime, timezone
 from bson import ObjectId
 import asyncio
+import time
+import logging
 
 try:
     from ..models import ChatCreate, MessageCreate, ChatType
@@ -744,6 +746,44 @@ async def send_message(
     if not ObjectId.is_valid(current_user):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user_id")
 
+    # Generate download token for file messages
+    download_token = None
+    if message.file_id:
+        try:
+            from ..crypto.media_encryption import MediaEncryptionService
+            import secrets
+            
+            # Get media encryption service
+            media_service = MediaEncryptionService()
+            
+            # Generate download token for web clients (device_id will be generated dynamically)
+            token = secrets.token_urlsafe(32)
+            expires_at = time.time() + (24 * 60 * 60)  # 24 hours
+            
+            # Store token in cache with compatible format
+            token_data = {
+                "token": token,
+                "file_id": message.file_id,  # Use file_id to match MediaDownloadToken
+                "device_id": "web_client",  # Generic for web clients
+                "user_id": current_user,
+                "expires_at": expires_at,
+                "max_downloads": 10,  # Allow multiple downloads
+                "download_count": 0
+            }
+            
+            # Store in Redis/cache
+            from ..redis_cache import cache
+            if cache:
+                await cache.set(f"download_token:{token}", token_data, expire_seconds=24*60*60)
+                download_token = token
+                logger.info(f"Generated download token for file {message.file_id}")
+            else:
+                logger.warning("Cache not available - skipping download token generation")
+                
+        except Exception as e:
+            logger.error(f"Failed to generate download token: {str(e)}")
+            # Continue without token - file download might fail but message should still send
+
     # Create message document (Atlas ObjectId schema)
     msg_type = "file" if message.file_id else "text"
     now = datetime.now(timezone.utc)
@@ -757,6 +797,7 @@ async def send_message(
         # Backward compatibility fields still used in other parts of the codebase
         "text": message.text,
         "file_id": message.file_id,
+        "download_token": download_token,  # Add download token for file messages
         "language": message.language,
         "reply_to_message_id": message.reply_to_message_id,
         "scheduled_at": message.scheduled_at,
@@ -865,7 +906,13 @@ async def send_message(
             logger.error(f"[WEBSOCKET] Failed to broadcast message: {type(e).__name__}: {e}")
     
     # Return created_at as ISO8601 UTC string to frontend
-    return {"message_id": str(inserted_id), "created_at": created_at_iso}
+    response_data = {"message_id": str(inserted_id), "created_at": created_at_iso}
+    
+    # Include download token for file messages
+    if download_token:
+        response_data["download_token"] = download_token
+    
+    return response_data
 
 
 @router.post("/messages/{message_id}/save", status_code=status.HTTP_200_OK)
