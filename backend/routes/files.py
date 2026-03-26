@@ -47,7 +47,8 @@ IS_PRODUCTION = (
 )
 
 try:
-    import boto3  # type: ignore[import-not-found]
+    import boto3
+    from botocore.config import Config  # type: ignore[import-not-found]
     from botocore.exceptions import ClientError  # type: ignore[import-not-found]
 except Exception:  # pragma: no cover - optional dependency
     boto3 = None  # type: ignore[assignment]
@@ -2725,13 +2726,49 @@ async def download_media(
 
         # Validate token
         token_key = f"download_token:{token}"
+        _log("info", f"Looking for download token", {"token_key": token_key, "token": token[:10] + "..."})
         token_data = await cache.get(token_key)
 
         if not token_data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired download token",
-            )
+            # Check if token is actually a file_id (fallback for direct file downloads)
+            _log("info", f"Token not found, checking if it's a file_id", {"token": token[:10] + "..."})
+            
+            # Try to find file by file_id
+            from .data.files import files_collection
+            try:
+                file_doc = await files_collection().find_one({"file_id": token})
+                if file_doc:
+                    _log("info", f"Found file by file_id, creating fallback token", {
+                        "file_id": token,
+                        "filename": file_doc.get("filename", "unknown")
+                    })
+                    
+                    # Create fallback token data
+                    token_data = {
+                        "token": token,
+                        "file_id": token,
+                        "device_id": device_id,
+                        "user_id": current_user,
+                        "expires_at": time.time() + (24 * 60 * 60),  # 24 hours
+                        "max_downloads": 10,
+                        "download_count": 0
+                    }
+                    
+                    # Store the fallback token in cache for future use
+                    await cache.set(token_key, token_data, expire_seconds=24*60*60)
+                    _log("info", f"Created and stored fallback download token")
+                else:
+                    _log("warning", f"File not found with file_id: {token}")
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="File not found",
+                    )
+            except Exception as e:
+                _log("error", f"Error looking up file by file_id: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid or expired download token",
+                )
 
         # Parse token data - handle both old and new formats
         if isinstance(token_data, str):
@@ -2838,13 +2875,49 @@ async def stream_media(
 
         # Validate token
         token_key = f"download_token:{token}"
+        _log("info", f"Looking for download token in stream", {"token_key": token_key, "token": token[:10] + "..."})
         token_data = await cache.get(token_key)
 
         if not token_data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired download token",
-            )
+            # Check if token is actually a file_id (fallback for direct file downloads)
+            _log("info", f"Token not found in stream, checking if it's a file_id", {"token": token[:10] + "..."})
+            
+            # Try to find file by file_id
+            from .data.files import files_collection
+            try:
+                file_doc = await files_collection().find_one({"file_id": token})
+                if file_doc:
+                    _log("info", f"Found file by file_id in stream, creating fallback token", {
+                        "file_id": token,
+                        "filename": file_doc.get("filename", "unknown")
+                    })
+                    
+                    # Create fallback token data
+                    token_data = {
+                        "token": token,
+                        "file_id": token,
+                        "device_id": device_id,
+                        "user_id": current_user,
+                        "expires_at": time.time() + (24 * 60 * 60),  # 24 hours
+                        "max_downloads": 10,
+                        "download_count": 0
+                    }
+                    
+                    # Store the fallback token in cache for future use
+                    await cache.set(token_key, token_data, expire_seconds=24*60*60)
+                    _log("info", f"Created and stored fallback download token in stream")
+                else:
+                    _log("warning", f"File not found with file_id in stream: {token}")
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="File not found",
+                    )
+            except Exception as e:
+                _log("error", f"Error looking up file by file_id in stream: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid or expired download token",
+                )
 
         # Parse token data - handle both old and new formats
         if isinstance(token_data, str):
@@ -7210,15 +7283,21 @@ class MediaLifecycleService:
             return
 
         try:
+            # Create proper boto3 Config object
+            s3_config = Config(
+                max_pool_connections=50,
+                retries={
+                    "max_attempts": 3,
+                    "mode": "adaptive",
+                },
+            )
+            
             self.s3_client = boto3.client(
                 "s3",
                 aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
                 aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
                 region_name=settings.AWS_REGION,
-                config={
-                    "max_pool_connections": 50,
-                    "retries": {"max_attempts": 3, "mode": "adaptive"},
-                },
+                config=s3_config,
             )
             _log("info", f"S3 client initialized for bucket: {self.bucket_name}")
         except Exception as e:
