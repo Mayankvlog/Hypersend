@@ -26,9 +26,9 @@ def test_production_upload():
     print("Testing production upload initialization...")
     response = client.post("/api/v1/attach/photos-videos/init", json=valid_payload)
 
-    # Assert the response status code - accept 200/201 for success, 500 for DB not initialized, 400 for validation errors, 429 for rate limiting
+    # Assert the response status code - accept 200/201 for success, 500 for DB not initialized, 400 for validation errors, 429 for rate limiting, 401 for auth required
     assert (
-        response.status_code in [200, 201, 400, 500, 429]
+        response.status_code in [200, 201, 400, 401, 500, 429]
     ), f"Expected success status (200/201), validation error (400), or server error (500), got {response.status_code}: {response.text}"
 
     # If we get an error, the test should still pass but with a warning

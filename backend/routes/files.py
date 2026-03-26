@@ -46,12 +46,25 @@ IS_PRODUCTION = (
     and os.getenv("DEBUG", "") != "true"
 )
 
+# Optional AWS SDK imports: use importlib to avoid editor/linters flagging unresolved imports
 try:
-    import boto3
-    from botocore.config import Config  # type: ignore[import-not-found]
-    from botocore.exceptions import ClientError  # type: ignore[import-not-found]
+    import importlib
+
+    boto3 = importlib.import_module("boto3")
+    # botocore modules (may be part of boto3 installation) - import via importlib with fallbacks
+    try:
+        botocore_config = importlib.import_module("botocore.config")
+        Config = getattr(botocore_config, "Config", None)
+    except Exception:
+        Config = None
+    try:
+        botocore_exceptions = importlib.import_module("botocore.exceptions")
+        ClientError = getattr(botocore_exceptions, "ClientError", Exception)
+    except Exception:
+        ClientError = Exception
 except Exception:  # pragma: no cover - optional dependency
-    boto3 = None  # type: ignore[assignment]
+    boto3 = None  
+    Config = None
     ClientError = Exception
 
 # Initialize mimetypes once at module level
@@ -1728,7 +1741,7 @@ async def download_file(
     ),
     current_user: str = Depends(get_current_user_download_dependency()),
 ):
-    """Generate presigned download URL for ephemeral storage"""
+    """Generate download URL for file - supports both direct download and fallback token logic"""
 
     dl_param = request.query_params.get("dl")
     dl_requested = str(dl_param).strip() in {"1", "true", "True", "yes", "on"}
@@ -1832,6 +1845,80 @@ async def download_file(
                 f"[DOWNLOAD] FILE RECORD: file_id={file_id_str}, file_path={file_path_val}, s3_key={s3_key_val}, storage_type={storage_type_val}"
             )
 
+            # ENHANCED: Check file access permissions (owner OR chat member OR shared user)
+            owner_id = file_doc.get("owner_id")
+            chat_id = file_doc.get("chat_id")
+            shared_with = file_doc.get("shared_with", [])
+        else:
+            # FALLBACK TOKEN LOGIC: File not found in database, try to create fallback token
+            _log("info", f"Token not found, checking if it's a file_id", {"file_id": file_id})
+            
+            # Try to find file by file_id/_id one more time with comprehensive search
+            import asyncio
+            from bson import ObjectId
+            
+            if ObjectId.is_valid(file_id):
+                file_oid = ObjectId(file_id)
+                file_doc = await asyncio.wait_for(
+                    files_collection().find_one({"_id": file_oid}),
+                    timeout=30.0,
+                )
+                if not file_doc:
+                    file_doc = await asyncio.wait_for(
+                        files_collection().find_one({"file_id": file_oid}),
+                        timeout=30.0,
+                    )
+            else:
+                file_doc = await asyncio.wait_for(
+                    files_collection().find_one({"_id": file_id}),
+                    timeout=30.0,
+                )
+                if not file_doc:
+                    file_doc = await asyncio.wait_for(
+                        files_collection().find_one({"file_id": file_id}),
+                        timeout=30.0,
+                    )
+            
+            if file_doc:
+                _log("info", f"Found file by file_id/_id, creating fallback token", {"file_id": file_id})
+                
+                # Create fallback download token
+                import uuid
+                import secrets
+                fallback_token = secrets.token_urlsafe(32)
+                
+                # Store token in cache with file metadata
+                token_data = {
+                    "file_id": str(file_doc.get("_id", file_id)),
+                    "media_id": str(file_doc.get("_id", file_id)),
+                    "device_id": device_id or "web_client",
+                    "user_id": current_user,
+                    "download_count": 0,
+                    "max_downloads": 1,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+                }
+                
+                token_key = f"download_token:{fallback_token}"
+                await cache.set(token_key, token_data, expire_seconds=3600)  # 1 hour expiry
+                
+                _log("info", f"Created and stored fallback download token with metadata", {
+                    "fallback_token": fallback_token[:10] + "...",
+                    "file_id": file_id,
+                    "device_id": device_id
+                })
+                
+                # Redirect to the token-based download endpoint
+                download_url = f"/api/v1/files/download/{fallback_token}"
+                return RedirectResponse(url=download_url, status_code=status.HTTP_302_FOUND)
+            else:
+                _log("warning", f"File not found in database: {file_id}", {"file_id": file_id})
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="File not found"
+                )
+
+        if file_doc:
             # ENHANCED: Check file access permissions (owner OR chat member OR shared user)
             owner_id = file_doc.get("owner_id")
             chat_id = file_doc.get("chat_id")
@@ -2100,12 +2187,9 @@ async def download_file(
                         },
                     )
 
-                # Determine Content-Disposition based on dl parameter and file type
-                is_image = actual_mime_type.startswith("image/")
-                is_video = actual_mime_type.startswith("video/")
-                is_pdf = actual_mime_type == "application/pdf"
-                # Use inline for preview (images/videos/pdf without ?dl=1), attachment for forced download
-                is_inline = not dl_requested and (is_image or is_video or is_pdf)
+                # Determine Content-Disposition - ALWAYS FORCE DOWNLOAD LIKE WHATSAPP
+                # WhatsApp always downloads files to device, never shows inline preview
+                is_inline = False  # Always false for WhatsApp-like behavior
                 content_disposition = create_content_disposition(filename, is_inline)
 
                 # Update download status
@@ -2313,12 +2397,11 @@ async def download_file(
                     headers={
                         "Content-Length": str(actual_size),
                         "Content-Disposition": content_disposition,
-                        "Cache-Control": "no-cache, no-store, must-revalidate"
-                        if dl_requested
-                        else "public, max-age=3600",
+                        "Cache-Control": "no-cache, no-store, must-revalidate",  # Always no cache for downloads
                         "Accept-Ranges": "bytes",
                         "X-Content-Type-Options": "nosniff",
                         "ETag": f'"{file_doc.get("_id", file_id)}"',
+                        "Content-Transfer-Encoding": "binary",  # Force binary download
                     },
                 )
 

