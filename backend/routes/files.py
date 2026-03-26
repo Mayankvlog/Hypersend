@@ -737,7 +737,16 @@ def _get_s3_client():
 
 
 def _get_sanitized_bucket_name():
-    return "test-bucket"
+    """Get the actual S3 bucket name from settings"""
+    try:
+        from backend.config import settings
+        return settings.S3_BUCKET
+    except ImportError:
+        from config import settings
+        return settings.S3_BUCKET
+    except Exception:
+        _log("error", "[S3] Failed to get bucket name from settings")
+        return None
 
 
 def _generate_presigned_url(bucket: str, key: str, expiration: int = 3600) -> str:
@@ -977,22 +986,35 @@ FileCompleteResponse = Any
 FileDeliveryAckRequest = Any
 
 
-# Mock cache
-class MockCache:
-    def smembers(self, key):
-        return []
+# Try to import cache from redis_cache, fallback to mock
+try:
+    from ..redis_cache import cache
+except ImportError:
+    try:
+        from backend.redis_cache import cache
+    except ImportError:
+        # Mock cache for testing
+        class MockCache:
+            def smembers(self, key):
+                return []
 
-    def get(self, key):
-        return None
+            async def get(self, key):
+                return None
 
-    def set(self, key, value):
-        pass
+            async def set(self, key, value, expire_seconds=None):
+                pass
 
-    def delete(self, key):
-        pass
+            async def delete(self, key):
+                pass
 
+            async def publish(self, channel, message):
+                pass
 
-cache = MockCache()
+            @property
+            def is_connected(self):
+                return False
+
+        cache = MockCache()
 
 
 # Create missing dependency functions
