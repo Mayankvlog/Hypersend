@@ -1102,7 +1102,7 @@ async def login(credentials: UserLogin, request: Request) -> JSONResponse:
                 ],  # SECURITY FIX: Store ObjectId directly, not string
                 "jti": jti,
                 "created_at": token_created_at,
-                "expires_at": token_created_at
+                "expires_at": datetime.utcnow()
                 + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
             }
         )
@@ -1350,7 +1350,10 @@ async def refresh_session_token(request: Request) -> JSONResponse:
             )
 
         # Ensure expires_at is timezone-aware for comparison
-        if isinstance(expires_at, datetime) and expires_at.tzinfo is None:
+        if isinstance(expires_at, (int, float)):
+            # Convert timestamp to datetime
+            expires_at = datetime.utcfromtimestamp(expires_at)
+        elif isinstance(expires_at, datetime) and expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
 
         if expires_at < datetime.now(timezone.utc):
@@ -1597,7 +1600,10 @@ async def refresh_access_token(request: RefreshTokenRequest) -> Token:
             )
 
         # Ensure expires_at is timezone-aware for comparison
-        if isinstance(expires_at, datetime) and expires_at.tzinfo is None:
+        if isinstance(expires_at, (int, float)):
+            # Convert timestamp to datetime
+            expires_at = datetime.utcfromtimestamp(expires_at)
+        elif isinstance(expires_at, datetime) and expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
 
         if expires_at < datetime.now(timezone.utc):

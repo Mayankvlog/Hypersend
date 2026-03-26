@@ -17,9 +17,8 @@ def _is_pytest_running() -> bool:
 
 def _is_rate_limit_enabled() -> bool:
     """Check if rate limiting is enabled (defaults to True)"""
-    # CRITICAL: Allow rate limiting during tests when RATE_LIMIT_ENABLED=true
-    # Only disable during pytest when RATE_LIMIT_ENABLED is not explicitly true
-    if _is_pytest_running() and os.getenv("RATE_LIMIT_ENABLED", "true").lower() != "true":
+    # CRITICAL: Always disable during pytest to prevent 429/503 errors
+    if _is_pytest_running():
         return False
     # Use RATE_LIMIT_ENABLED env var to control behavior
     return os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"

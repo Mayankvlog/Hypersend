@@ -173,7 +173,7 @@ class Settings:
     _raw_database_name = os.getenv("DATABASE_NAME")
     _raw_atlas_enabled = os.getenv("MONGODB_ATLAS_ENABLED", "true").lower() in ("true", "1", "yes")
 
-    # CRITICAL: Enforce mock database disabled globally (never allowed)
+    # CRITICAL: Enforce mock database disabled globally (never allowed, even during testing)
     _use_mock_db = os.getenv("USE_MOCK_DB", "false").lower() in ("true", "1", "yes")
     if _use_mock_db:
         logger.error("[CONFIG] CRITICAL: USE_MOCK_DB is permanently disabled")
