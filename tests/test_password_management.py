@@ -7,8 +7,8 @@ Tests for forgot password, reset password, and change password functionality
 # Set environment variables BEFORE any imports
 # Configure Atlas-only test environment BEFORE any backend imports
 import os
-os.environ.setdefault('USE_MOCK_DB', 'true')
-os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'false')
+os.environ.setdefault('USE_MOCK_DB', 'false')
+os.environ.setdefault('MONGODB_ATLAS_ENABLED', 'true')
 os.environ.setdefault('MONGODB_URI', 'mongodb+srv://fakeuser:fakepass@fakecluster.fake.mongodb.net/fakedb?retryWrites=true&w=majority')
 os.environ.setdefault('DATABASE_NAME', 'Hypersend_test')
 os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-pytest-only-do-not-use-in-production')
@@ -17,8 +17,8 @@ os.environ['DEBUG'] = 'True'
 import os
 import sys
 
-# Enable mock database for tests
-os.environ['USE_MOCK_DB'] = 'True'
+# Configure database for tests
+os.environ['USE_MOCK_DB'] = 'false'
 os.environ['ENABLE_PASSWORD_RESET'] = 'true'
 os.environ['EMAIL_SERVICE_ENABLED'] = 'true'
 os.environ['SMTP_HOST'] = 'smtp.test.com'
@@ -43,11 +43,7 @@ from test_utils import clear_collection, setup_test_document, clear_all_test_col
 
 # Import required modules
 try:
-    # Import config first to reload it after setting env vars
-    import backend.config
-    import importlib
-    importlib.reload(backend.config)
-    
+    # Import backend modules
     from backend.main import app
     from backend.models import PasswordResetRequest, ChangePasswordRequest
     from auth.utils import get_current_user, hash_password, create_access_token, decode_token

@@ -31,7 +31,11 @@ from test_utils import clear_collection, setup_test_document, clear_all_test_col
 
 from backend.main import app
 from backend.models import GroupCreate, GroupMembersUpdate
-from backend.mock_database import users_collection, chats_collection, messages_collection
+from backend.database import users_collection, chats_collection, get_database
+
+def messages_collection():
+    """Get messages collection from database"""
+    return get_database()["messages"]
 
 class TestGroupMemberFix:
     """Test group member fix functionality"""

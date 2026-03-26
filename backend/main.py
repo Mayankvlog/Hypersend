@@ -73,17 +73,17 @@ from backend.database import init_database
 
 try:
     from backend.security import SecurityConfig
-except Exception as e:
+except Exception:
     raise
 
 try:
     from backend.error_handlers import register_exception_handlers
-except Exception as e:
+except Exception:
     raise
 
 try:
     from backend.redis_cache import init_cache, cleanup_cache
-except Exception as e:
+except Exception:
     raise
 
 
@@ -609,7 +609,6 @@ async def lifespan(app: FastAPI):
                 await asyncio.wait_for(
                     websocket_manager.initialize(redis_client), timeout=10.0
                 )
-                websocket_manager_initialized = True
                 logger.info("[STARTUP] WebSocket manager initialization completed")
 
                 # Start global Pub/Sub subscriber
@@ -2734,7 +2733,7 @@ async def sync_message_history(
 
         # Default: sync from 90 days ago if not specified
         if not sync_from:
-            sync_from = (datetime.utcnow() - timedelta(days=90)).isoformat()
+            sync_from = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
 
         # Validate batch size
         if batch_size > 1000 or batch_size < 10:

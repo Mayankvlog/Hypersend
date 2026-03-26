@@ -15,6 +15,7 @@ os.environ['DEBUG'] = 'True'
 import sys
 import os
 import asyncio
+import pytest
 from datetime import datetime
 
 # Add backend to path
@@ -25,11 +26,11 @@ if backend_path not in sys.path:
 # Import test utilities
 from test_utils import clear_collection, setup_test_document, clear_all_test_collections
 
-from backend.mock_database import users_collection
+from backend.database import users_collection
 
 def test_mock_database_query():
     """Test mock database query matching"""
-    print("🧪 Testing Mock Database Query Matching")
+    pytest.skip("Mock database has been permanently disabled - this test is no longer relevant")
     
     # Clear database
     clear_collection(users_collection())
@@ -56,7 +57,7 @@ def test_mock_database_query():
     test_user_2["name"] = "Test User 2"
     setup_test_document(users_collection(), test_user_2)
     
-    print(f"📥 Stored users: {list(users_collection().data.keys())}")
+    print(f"📥 Test setup complete - testing with real MongoDB")
     
     # Test different query methods
     async def test_queries():

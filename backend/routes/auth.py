@@ -1102,7 +1102,7 @@ async def login(credentials: UserLogin, request: Request) -> JSONResponse:
                 ],  # SECURITY FIX: Store ObjectId directly, not string
                 "jti": jti,
                 "created_at": token_created_at,
-                "expires_at": datetime.utcnow()
+                "expires_at": datetime.now(timezone.utc)
                 + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
             }
         )

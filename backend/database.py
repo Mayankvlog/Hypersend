@@ -50,7 +50,7 @@ async def init_database():
     CRITICAL: Mock database is permanently disabled - only real MongoDB Atlas allowed.
     This function is designed to be called exactly once during FastAPI startup.
     It is async-safe and will not create duplicate clients under concurrent calls.
-    CRITICAL: Uses UTC timestamps only via datetime.utcnow()
+    CRITICAL: Uses UTC timestamps only via datetime.now(timezone.utc)
     """
     global client, db, _database_initialized, _init_lock
 

@@ -1277,79 +1277,26 @@ except ImportError:
 
 
 
-# Try to import from db_proxy, fallback to mock
+# Import database collections - NO MOCK FALLBACK
+def files_collection():
+    """Get files collection - CRITICAL: Real database only"""
+    from backend.database import files_collection as _files_collection
+    return _files_collection()
 
-try:
+def users_collection():
+    """Get users collection - CRITICAL: Real database only"""
+    from backend.database import users_collection as _users_collection
+    return _users_collection()
 
-    from db_proxy import files_collection, users_collection, uploads_collection, chats_collection
+def uploads_collection():
+    """Get uploads collection - CRITICAL: Real database only"""
+    from backend.database import get_database
+    return get_database()["uploads"]
 
-except ImportError:
-
-    # Mock collections for testing
-
-    class MockCollection:
-
-        def __init__(self):
-
-            self.data = {}
-
-
-
-        async def find_one(self, query):
-
-            return None
-
-
-
-        async def insert_one(self, data):
-
-            return MockInsertResult()
-
-
-
-        async def update_one(self, query, update):
-
-            return MockUpdateResult()
-
-
-
-    class MockInsertResult:
-
-        def __init__(self):
-
-            self.inserted_id = "mock_id"
-
-
-
-    class MockUpdateResult:
-
-        def __init__(self):
-
-            self.modified_count = 1
-
-
-
-    def files_collection():
-
-        return MockCollection()
-
-
-
-    def users_collection():
-
-        return MockCollection()
-
-
-
-    def uploads_collection():
-
-        return MockCollection()
-
-
-
-    def chats_collection():
-
-        return MockCollection()
+def chats_collection():
+    """Get chats collection - CRITICAL: Real database only"""
+    from backend.database import get_database
+    return get_database()["chats"]
 
 
 
@@ -1921,35 +1868,11 @@ logger = _log
 
 
 
-# Settings import with fallback
-
+# Settings import - NO MOCK FALLBACK
 try:
-
     from backend.config import settings
-
 except ImportError:
-
-    # Mock settings
-
-    class MockSettings:
-
-        S3_BUCKET = "test-bucket"
-
-        AWS_ACCESS_KEY_ID = "test-key"
-
-        AWS_SECRET_ACCESS_KEY = "test-secret"
-
-        AWS_REGION = "us-east-1"
-
-        DATA_ROOT = Path("/app/data")
-
-        MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024 * 1024
-
-        CHUNK_SIZE = 4 * 1024 * 1024
-
-
-
-    settings = MockSettings()
+    raise RuntimeError("Configuration is required - no fallback available")
 
 
 
@@ -2045,63 +1968,14 @@ FileDeliveryAckRequest = Any
 
 
 
-# Try to import cache from redis_cache, fallback to mock
-
+# Import Redis cache - NO MOCK FALLBACK
 try:
-
     from ..redis_cache import cache
-
 except ImportError:
-
     try:
-
         from backend.redis_cache import cache
-
     except ImportError:
-
-        # Mock cache for testing
-
-        class MockCache:
-
-            def smembers(self, key):
-
-                return []
-
-
-
-            async def get(self, key):
-
-                return None
-
-
-
-            async def set(self, key, value, expire_seconds=None):
-
-                pass
-
-
-
-            async def delete(self, key):
-
-                pass
-
-
-
-            async def publish(self, channel, message):
-
-                pass
-
-
-
-            @property
-
-            def is_connected(self):
-
-                return False
-
-
-
-        cache = MockCache()
+        raise RuntimeError("Redis cache is required - no fallback available")
 
 
 
@@ -5944,7 +5818,7 @@ async def _handle_local_media_download(
 
                 status_code=status.HTTP_404_NOT_FOUND,
 
-                detail="File not found on local storage",
+                detail="File not found in S3 storage",
 
             )
 
@@ -6050,13 +5924,13 @@ async def _handle_local_media_download(
 
     except Exception as e:
 
-        print(f"MEDIA_DEBUG: Local download error: {e}")
+        print(f"MEDIA_DEBUG: S3 download error: {e}")
 
         raise HTTPException(
 
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
 
-            detail="Failed to download from local storage",
+            detail="Failed to download from S3 storage",
 
         )
 
@@ -8538,7 +8412,7 @@ async def capture_camera_image(
 
         "filename",
 
-        f"camera_{datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()}.jpg",
+        f"camera_{datetime.now(timezone.utc).isoformat()}.jpg",
 
     )
 
@@ -13910,19 +13784,7 @@ class MediaLifecycleService:
 
         if not self.s3_client:
 
-            _log("warning", "S3 client not available - using mock upload")
-
-            return {
-
-                "media_id": "mock_media_id",
-
-                "chunk_index": chunk_index,
-
-                "status": "uploaded",
-
-                "message": f"Chunk {chunk_index} uploaded successfully (mock)",
-
-            }
+            raise RuntimeError("S3 client is required - no fallback available")
 
 
 
