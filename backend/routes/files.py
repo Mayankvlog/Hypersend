@@ -2733,12 +2733,35 @@ async def download_media(
             # Check if token is actually a file_id (fallback for direct file downloads)
             _log("info", f"Token not found, checking if it's a file_id", {"token": token[:10] + "..."})
             
-            # Try to find file by file_id
+            # Try to find file by file_id or _id (fallback for direct file downloads)
             # files_collection is already imported at module level from db_proxy
             try:
-                file_doc = await files_collection().find_one({"file_id": token})
+                from bson import ObjectId
+                import asyncio
+                
+                file_doc = None
+                
+                # First try to find by file_id field
+                file_doc = await asyncio.wait_for(
+                    files_collection().find_one({"file_id": token}),
+                    timeout=30.0
+                )
+                
+                # If not found, try by _id field (handle both string and ObjectId)
+                if not file_doc:
+                    if ObjectId.is_valid(token):
+                        file_doc = await asyncio.wait_for(
+                            files_collection().find_one({"_id": ObjectId(token)}),
+                            timeout=30.0
+                        )
+                    else:
+                        file_doc = await asyncio.wait_for(
+                            files_collection().find_one({"_id": token}),
+                            timeout=30.0
+                        )
+                
                 if file_doc:
-                    _log("info", f"Found file by file_id, creating fallback token", {
+                    _log("info", f"Found file by file_id/_id, creating fallback token", {
                         "file_id": token,
                         "filename": file_doc.get("filename", "unknown")
                     })
@@ -2882,12 +2905,35 @@ async def stream_media(
             # Check if token is actually a file_id (fallback for direct file downloads)
             _log("info", f"Token not found in stream, checking if it's a file_id", {"token": token[:10] + "..."})
             
-            # Try to find file by file_id
+            # Try to find file by file_id or _id (fallback for direct file downloads)
             # files_collection is already imported at module level from db_proxy
             try:
-                file_doc = await files_collection().find_one({"file_id": token})
+                from bson import ObjectId
+                import asyncio
+                
+                file_doc = None
+                
+                # First try to find by file_id field
+                file_doc = await asyncio.wait_for(
+                    files_collection().find_one({"file_id": token}),
+                    timeout=30.0
+                )
+                
+                # If not found, try by _id field (handle both string and ObjectId)
+                if not file_doc:
+                    if ObjectId.is_valid(token):
+                        file_doc = await asyncio.wait_for(
+                            files_collection().find_one({"_id": ObjectId(token)}),
+                            timeout=30.0
+                        )
+                    else:
+                        file_doc = await asyncio.wait_for(
+                            files_collection().find_one({"_id": token}),
+                            timeout=30.0
+                        )
+                
                 if file_doc:
-                    _log("info", f"Found file by file_id in stream, creating fallback token", {
+                    _log("info", f"Found file by file_id/_id in stream, creating fallback token", {
                         "file_id": token,
                         "filename": file_doc.get("filename", "unknown")
                     })
