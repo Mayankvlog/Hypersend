@@ -3003,6 +3003,8 @@ async def complete_upload(
                 "s3_key": s3_key,
                 "object_key": s3_key,  # For compatibility with existing download logic
                 "user_id": current_user,
+                "owner_id": current_user,  # CRITICAL: Set owner_id for permission checks
+                "chat_id": upload_record.get("chat_id"),  # CRITICAL: Set chat_id for permission checks
                 "created_at": datetime.now(timezone.utc),
                 "status": "completed",
                 "file_url": file_url,
@@ -3714,9 +3716,6 @@ async def download_file(
         file_oid = ObjectId(file_id)
         
         # Query files collection by _id
-        print(f"🔍 DEBUG: Querying files collection for file_id: {file_id}")
-        print(f"🔍 DEBUG: User ID: {current_user}")
-        print(f"🔍 DEBUG: ObjectId validation: {ObjectId.is_valid(file_id)}")
         _log("info", f"Querying files collection for file_id: {file_id}", {"user_id": current_user})
         
         try:
@@ -3724,13 +3723,7 @@ async def download_file(
                 files_collection().find_one({"_id": file_oid}),
                 timeout=30.0,
             )
-            print(f"🔍 DEBUG: Database query result: {file_doc is not None}")
-            if file_doc:
-                print(f"🔍 DEBUG: File document keys: {list(file_doc.keys())}")
-                print(f"🔍 DEBUG: File status: {file_doc.get('status')}")
-                print(f"🔍 DEBUG: S3 key: {file_doc.get('s3_key')}")
         except asyncio.TimeoutError:
-            print(f"❌ DEBUG: Database timeout for file_id: {file_id}")
             _log("error", f"Database timeout querying file: {file_id}", {"user_id": current_user})
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -5106,69 +5099,43 @@ async def get_media_by_id_main(
             )
 
 
-
         owner_id = file_doc.get("owner_id")
-
         chat_id = file_doc.get("chat_id")
-
         shared_with = file_doc.get("shared_with", [])
 
-
-
         if str(owner_id) == str(current_user):
-
             pass
 
         elif str(current_user) in [str(x) for x in (shared_with or [])]:
-
             pass
 
         elif chat_id:
-
             try:
-
                 chat_doc = await chats_collection().find_one({"_id": chat_id})
 
                 if not chat_doc and ObjectId.is_valid(str(chat_id)):
-
                     chat_doc = await chats_collection().find_one(
-
                         {"_id": ObjectId(str(chat_id))}
-
                     )
 
                 members = chat_doc.get("members", []) if chat_doc else []
-
                 if not (chat_doc and str(current_user) in [str(m) for m in members]):
-
                     raise HTTPException(
-
                         status_code=status.HTTP_403_FORBIDDEN,
-
                         detail="Access denied: you don't have permission to access this media",
-
                     )
 
             except HTTPException:
-
                 raise
-
             except Exception:
-
                 raise HTTPException(
-
                     status_code=status.HTTP_403_FORBIDDEN,
-
                     detail="Access denied: unable to verify chat membership",
-
                 )
 
         else:
-
             raise HTTPException(
-
                 status_code=status.HTTP_403_FORBIDDEN,
-
                 detail="Access denied: you don't have permission to access this media",
 
             )
