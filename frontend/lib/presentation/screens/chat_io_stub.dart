@@ -149,28 +149,31 @@ Future<void> openFile(String filePath) async {
 /// Respects backend headers and ensures files download with correct type
 /// Properly handles authentication and MIME types for all file types
 Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
-  debugPrint('[FILE_WEB] Fetch API download: $fileName');
+  debugPrint('[FILE_WEB] Fetch-based download: $fileName');
   debugPrint('[FILE_WEB] URL: $downloadUrl');
   
   try {
-    // Validate URL before processing
-    if (downloadUrl.isEmpty) {
-      throw Exception('Download URL is empty');
-    }
-    
-    final uri = Uri.tryParse(downloadUrl);
-    if (uri == null) {
-      throw Exception('Invalid download URL: $downloadUrl');
-    }
-    
     // Use fetch API for proper header handling and authentication
     debugPrint('[FILE_WEB] Starting fetch request...');
     
-    // Create proper RequestInit object
+    // Get access token for Authorization header
+    final serviceProvider = ServiceProvider();
+    final accessToken = serviceProvider.authService.accessToken;
+    
+    // Create proper RequestInit object with Authorization header
     final requestInit = html.RequestInit(
       method: 'GET',
       credentials: 'include',
+      headers: {
+        // CRITICAL FIX: Add Authorization header for proper authentication
+        if (accessToken != null && accessToken.isNotEmpty)
+          'Authorization': 'Bearer $accessToken',
+        'Accept': 'application/octet-stream, image/*, video/*, application/pdf, */*',
+        'Cache-Control': 'no-cache',
+      },
     );
+    
+    debugPrint('[FILE_WEB] Request headers: ${requestInit.headers}');
     
     final response = await html.window.fetch(
       downloadUrl.toJS,

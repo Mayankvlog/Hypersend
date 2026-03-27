@@ -4208,7 +4208,7 @@ async def initiate_media_upload(
 
 async def upload_init(
 
-    request: Request, current_user: str = Depends(get_current_user)
+    request: Request, current_user: str = Depends(get_current_user_download_dependency())
 
 ):
 
@@ -4308,7 +4308,7 @@ async def upload_media_chunk(
 
     chunk_index: int = Query(..., description="Chunk index"),
 
-    current_user: str = Depends(get_current_user),
+    current_user: str = Depends(get_current_user_download_dependency()),
 
 ):
 
@@ -4488,7 +4488,7 @@ async def upload_media_chunk(
 
 async def complete_media_upload(
 
-    request: FileCompleteResponse, current_user: str = Depends(get_current_user)
+    request: FileCompleteResponse, current_user: str = Depends(get_current_user_download_dependency())
 
 ):
 

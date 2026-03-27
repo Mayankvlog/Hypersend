@@ -172,11 +172,24 @@ Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
     // Use fetch API for proper header handling and authentication
     debugPrint('[FILE_WEB_STUB] Starting fetch request...');
     
-    // Create proper RequestInit object
+    // Get access token for Authorization header
+    final serviceProvider = ServiceProvider();
+    final accessToken = serviceProvider.authService.accessToken;
+    
+    // Create proper RequestInit object with Authorization header
     final requestInit = html.RequestInit(
       method: 'GET',
       credentials: 'include',
+      headers: {
+        // CRITICAL FIX: Add Authorization header for proper authentication
+        if (accessToken != null && accessToken.isNotEmpty)
+          'Authorization': 'Bearer $accessToken',
+        'Accept': 'application/octet-stream, image/*, video/*, application/pdf, */*',
+        'Cache-Control': 'no-cache',
+      },
     );
+    
+    debugPrint('[FILE_WEB_STUB] Request headers: ${requestInit.headers}');
     
     final response = await html.window.fetch(
       downloadUrl.toJS,
