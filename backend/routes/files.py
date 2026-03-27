@@ -3393,6 +3393,12 @@ async def get_current_user_for_download_dependency(request: Request) -> str:
     try:
         auth_header = request.headers.get("Authorization")
         
+        _log("info", f"🔍 DEBUG: Request headers for file download", {
+            "authorization_header": auth_header[:50] + "..." if auth_header and len(auth_header) > 50 else auth_header,
+            "all_headers": dict(request.headers),
+            "user_agent": request.headers.get("user-agent", "unknown")[:100]
+        })
+        
         # ENHANCED: Check both Authorization header and query parameter token
         token = None
         
@@ -3574,12 +3580,18 @@ async def download_file(
     ),
 
     current_user: str = Depends(get_current_user_download_dependency()),
-
 ):
-
     """Generate download URL for file - supports both direct download and fallback token logic"""
 
-
+    # DEBUG: Log download request details
+    _log("info", f"🔍 FILE DOWNLOAD REQUEST", {
+        "file_id": file_id,
+        "current_user": current_user,
+        "user_agent": request.headers.get("user-agent", "unknown")[:100],
+        "auth_header": request.headers.get("Authorization", "missing")[:50] if request.headers.get("Authorization") else "missing",
+        "dl_requested": request.query_params.get("dl"),
+        "query_params": dict(request.query_params)
+    })
 
     # SECURITY: Ensure file_id is always defined and validate to prevent path injection attacks
     if not file_id or not isinstance(file_id, str):

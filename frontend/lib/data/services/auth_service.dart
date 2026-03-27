@@ -238,6 +238,16 @@ class AuthService {
         throw Exception(errorDetail);
       }
       
+      // Store JWT tokens for Authorization header usage (e.g., file downloads)
+      if (result.containsKey('access_token')) {
+        _accessToken = result['access_token'] as String;
+        debugPrint('[AUTH_LOGIN] Access token stored for Authorization headers');
+      }
+      if (result.containsKey('refresh_token')) {
+        _refreshToken = result['refresh_token'] as String;
+        debugPrint('[AUTH_LOGIN] Refresh token stored for session management');
+      }
+      
       // With HTTPOnly cookies, we don't need to handle tokens manually
       // The server sets cookies automatically and they're sent with subsequent requests
       debugPrint('[AUTH_LOGIN] Login successful - HTTPOnly cookies set by server');
