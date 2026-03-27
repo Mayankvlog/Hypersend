@@ -337,6 +337,19 @@ class ApiService {
           if (!options.headers.containsKey('Content-Type')) {
             options.headers['Content-Type'] = 'application/json';
           }
+          
+          // CRITICAL FIX: Ensure Authorization header is always present for file downloads
+          // This fixes the missing JWT token issue in file download requests
+          if (options.path.contains('/files/download') || options.path.contains('/files/')) {
+            final authToken = _getCurrentAuthToken();
+            if (authToken != null && !options.headers.containsKey('Authorization')) {
+              options.headers['Authorization'] = authToken;
+              _log('[AUTH_INTERCEPTOR] Added Authorization header for file download: ${authToken.substring(0, Math.min(20, authToken.length))}...');
+            } else if (authToken == null) {
+              _log('[AUTH_INTERCEPTOR] WARNING: No token available for file download - will be treated as anonymous');
+            }
+          }
+          
           // Log auth header for debugging
           final authHeader = options.headers['Authorization'];
           if (authHeader != null) {
@@ -2282,19 +2295,22 @@ Future<void> postToChannel(String channelId, String text) async {
         headers['Authorization'] = authToken;
       }
       
+      // CRITICAL FIX: Ensure Authorization header is always attached via _attachAuthHeader
+      // This uses the same auth logic as other API calls for consistency
+      final authOptions = _attachAuthHeader(Options(
+        receiveTimeout: Duration(minutes: 30),
+        sendTimeout: Duration(minutes: 30),
+        // CRITICAL: Ensure HTTPOnly cookies are sent for Flutter Web
+        extra: {
+          'withCredentials': true,
+        },
+      ));
+      
       await _dio.download(
         '${ApiConstants.baseUrl}/files/download/$fileId',
         savePath,
         onReceiveProgress: onReceiveProgress,
-        options: Options(
-          headers: headers,
-          receiveTimeout: Duration(minutes: 30),
-          sendTimeout: Duration(minutes: 30),
-          // CRITICAL: Ensure HTTPOnly cookies are sent for Flutter Web
-          extra: {
-            'withCredentials': true,
-          },
-        ),
+        options: authOptions,
       );
     } on DioException catch (e) {
       debugPrint('[DOWNLOAD] Error downloading file: ${e.type} - ${e.message}');
@@ -2426,18 +2442,22 @@ Future<void> postToChannel(String channelId, String text) async {
       headers['Authorization'] = authToken;
     }
     
+    // CRITICAL FIX: Use _attachAuthHeader to ensure consistent Authorization header handling
+    // This uses the same auth logic as other API calls for consistency
+    final authOptions = _attachAuthHeader(Options(
+      responseType: ResponseType.bytes,
+      headers: headers,
+      followRedirects: false,  // Allow manual redirect handling
+      // CRITICAL: Ensure HTTPOnly cookies are sent for Flutter Web
+      extra: {
+        'withCredentials': true,
+      },
+    ));
+    
     // CRITICAL FIX: Use correct backend endpoint with HTTPOnly cookie authentication
     return await _dio.get<Uint8List>(
       '${ApiConstants.baseUrl}/files/download/$fileId',
-      options: Options(
-        responseType: ResponseType.bytes,
-        headers: headers,
-        followRedirects: false,  // Allow manual redirect handling
-        // CRITICAL: Ensure HTTPOnly cookies are sent for Flutter Web
-        extra: {
-          'withCredentials': true,
-        },
-      ),
+      options: authOptions,
     );
   }
 
