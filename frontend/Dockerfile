@@ -67,6 +67,9 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/*
 
+# ✅ CRITICAL FIX: Remove default.conf to prevent "conflicting server name _" warning
+RUN rm -f /etc/nginx/conf.d/default.conf
+
 # Copy Flutter build
 COPY --from=build /app/build/web /usr/share/nginx/html
 
@@ -76,7 +79,7 @@ RUN printf '%s\n' \
     'server {' \
     '    listen 80;' \
     '    listen [::]:80;' \
-    '    server_name _;' \
+    '    server_name zaply.in.net www.zaply.in.net;' \
     '    root /usr/share/nginx/html;' \
     '    index index.html;' \
     '    add_header X-Content-Type-Options "nosniff" always;' \
