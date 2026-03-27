@@ -43,9 +43,15 @@ class ApiService {
 
   String _getBaseUrl() {
     // Enhanced URL selection with fallback logic
+    // Use environment variable with fallback to production URL
+    final primaryUrl = String.fromEnvironment(
+      'API_BASE_URL',
+      defaultValue: 'https://zaply.in.net/api/v1',
+    );
+    
     final urls = [
-      'https://zaply.in.net/api/v1',
-      'https://www.zaply.in.net/api/v1',
+      primaryUrl,
+      primaryUrl.replaceFirst('https://zaply.in.net', 'https://www.zaply.in.net'),
     ];
     
     // Return primary URL for now

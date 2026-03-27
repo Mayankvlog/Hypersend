@@ -90,9 +90,15 @@ class ApiService {
 
   // Intelligent base URL selection with fallback logic
   String _getOptimalBaseUrl() {
+    // Use environment variable with fallback to production URL
+    final primaryUrl = String.fromEnvironment(
+      'API_BASE_URL',
+      defaultValue: 'https://zaply.in.net/api/v1',
+    );
+    
     final urls = [
-      'https://zaply.in.net/api/v1',
-      'https://www.zaply.in.net/api/v1',
+      primaryUrl,
+      primaryUrl.replaceFirst('https://zaply.in.net', 'https://www.zaply.in.net'),
     ];
 
     // For now, return the primary URL
@@ -102,9 +108,18 @@ class ApiService {
 
   // Check server connectivity before making requests
   Future<bool> checkServerConnectivity() async {
+    // Use environment variable with fallback to production URL
+    final primaryUrl = String.fromEnvironment(
+      'API_BASE_URL',
+      defaultValue: 'https://zaply.in.net/api/v1',
+    );
+    
+    // Extract base URL for health check (remove /api/v1)
+    final baseUrl = primaryUrl.replaceAll('/api/v1', '');
+    
     final urls = [
-      'https://zaply.in.net/health',
-      'https://www.zaply.in.net/health',
+      '$baseUrl/health',
+      baseUrl.replaceFirst('https://zaply.in.net', 'https://www.zaply.in.net') + '/health',
     ];
     
     for (String url in urls) {
