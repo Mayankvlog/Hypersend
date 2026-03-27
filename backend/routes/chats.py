@@ -754,7 +754,8 @@ async def send_message(
             import secrets
             
             # Get media encryption service
-            media_service = MediaEncryptionService()
+            from ..redis_cache import cache
+            media_service = MediaEncryptionService(redis_client=cache)
             
             # Generate download token for web clients (device_id will be generated dynamically)
             token = secrets.token_urlsafe(32)

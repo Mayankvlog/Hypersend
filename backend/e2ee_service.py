@@ -1,23 +1,3 @@
-"""
-E2EE Encryption Service - WhatsApp-Grade E2E Architecture Coordinator
-
-SECURITY FLOW:
-1. X3DH Key Exchange: Establish initial shared secret (initiator ↔ recipient)
-2. Double Ratchet Init: Derive root key, initialize sending/receiving chains
-3. Message Encryption: Per-message key derivation (chain ratchet)
-4. Multi-Device Fan-Out: Encrypt separately for each recipient device
-5. Replay Protection: Per-device message counter validation
-6. Forward Secrecy: Message keys deleted after use (no future compromise)
-7. Break-In Recovery: DH ratchet on new ephemeral keys
-
-CRITICAL PROPERTIES:
-✓ Server never sees plaintext (only ciphertext)
-✓ Per-device sessions (no shared keys)
-✓ Per-message keys (old message can't decrypt new messages)
-✓ Out-of-order delivery (skipped message keys stored temporarily)
-✓ Eventually consistent revocation (device can be removed with signal)
-"""
-
 import logging
 import base64
 import json
@@ -202,7 +182,7 @@ class E2EEService:
         self.multi_device_manager = (
             MultiDeviceManager(redis_client) if redis_client else None
         )
-        self.media_encryption = MediaEncryptionService()
+        self.media_encryption = MediaEncryptionService(redis_client=redis_client)
         self.backup_service = (
             EncryptedBackupService(redis_client) if redis_client else None
         )

@@ -16,7 +16,10 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from backend.redis_cache import cache
+try:
+    from backend.redis_cache import cache
+except ImportError:
+    from redis_cache import cache
 from db_proxy import files_collection
 import logging
 
@@ -530,11 +533,7 @@ class MediaEncryptionService:
         except Exception as e:
             logger.error(f"Failed to get orphaned metadata: {str(e)}")
             return []
-    """Handles media encryption and key management"""
-    
-    def __init__(self, redis_client):
-        self.redis = redis_client
-        self.chunk_size = 1024 * 1024  # 1MB chunks
+    # Note: __init__ method is already defined at line 157 with proper redis_client handling
     
     def generate_media_key(self) -> bytes:
         """Generate random AES-256 key for media encryption"""

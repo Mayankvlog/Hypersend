@@ -1956,13 +1956,17 @@ from typing import Any
 
 
 
-# Mock request types
-
-FileInitRequest = Any
-
-FileCompleteResponse = Any
-
-FileDeliveryAckRequest = Any
+# Import proper request types
+try:
+    from ..models import FileInitRequest, FileCompleteResponse, FileDeliveryAckRequest
+except ImportError:
+    try:
+        from models import FileInitRequest, FileCompleteResponse, FileDeliveryAckRequest
+    except ImportError:
+        # Fallback to Any if models not available
+        FileInitRequest = Any
+        FileCompleteResponse = Any
+        FileDeliveryAckRequest = Any
 
 
 
@@ -3710,6 +3714,9 @@ async def download_file(
         file_oid = ObjectId(file_id)
         
         # Query files collection by _id
+        print(f"🔍 DEBUG: Querying files collection for file_id: {file_id}")
+        print(f"🔍 DEBUG: User ID: {current_user}")
+        print(f"🔍 DEBUG: ObjectId validation: {ObjectId.is_valid(file_id)}")
         _log("info", f"Querying files collection for file_id: {file_id}", {"user_id": current_user})
         
         try:
@@ -3717,7 +3724,13 @@ async def download_file(
                 files_collection().find_one({"_id": file_oid}),
                 timeout=30.0,
             )
+            print(f"🔍 DEBUG: Database query result: {file_doc is not None}")
+            if file_doc:
+                print(f"🔍 DEBUG: File document keys: {list(file_doc.keys())}")
+                print(f"🔍 DEBUG: File status: {file_doc.get('status')}")
+                print(f"🔍 DEBUG: S3 key: {file_doc.get('s3_key')}")
         except asyncio.TimeoutError:
+            print(f"❌ DEBUG: Database timeout for file_id: {file_id}")
             _log("error", f"Database timeout querying file: {file_id}", {"user_id": current_user})
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -4065,6 +4078,12 @@ async def acknowledge_file_delivery(
 
 
 
+@router.get("/test-upload")
+async def test_upload():
+    """Simple test endpoint"""
+    return {"status": "test working", "message": "Upload endpoint reachable"}
+
+
 @router.post("/initiate-upload")
 
 async def initiate_media_upload(
@@ -4075,15 +4094,19 @@ async def initiate_media_upload(
 
     """Initiate WhatsApp-style media upload with encryption"""
 
+    print(f"🔍 DEBUG: initiate_media_upload called")
+    print(f"🔍 DEBUG: current_user: {current_user}")
+    print(f"🔍 DEBUG: request: {request}")
+
     try:
 
         # Get recipient devices for fanout
 
         recipient_devices = []
 
-        if request.recipient_id:
+        if request.receiver_id:
 
-            device_key = f"user_devices:{request.recipient_id}"
+            device_key = f"user_devices:{request.receiver_id}"
 
             devices = await cache.smembers(device_key)
 
@@ -4103,9 +4126,9 @@ async def initiate_media_upload(
 
             sender_user_id=current_user,
 
-            sender_device_id=request.device_id or "primary",
+            sender_device_id="primary",  # Use default device_id since FileInitRequest doesn't have this field
 
-            file_size=request.file_size,
+            file_size=request.size,  # FileInitRequest has 'size' field, not 'file_size'
 
             mime_type=request.mime_type,
 
