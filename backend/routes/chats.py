@@ -743,6 +743,12 @@ async def send_message(
             detail="Message must have text or file_id"
         )
     
+    # DEBUG: Log the file_id being received
+    if message.file_id:
+        logger.info(f"DEBUG: Creating message with file_id: {message.file_id}")
+    else:
+        logger.info("DEBUG: Creating text message (no file_id)")
+    
     if not ObjectId.is_valid(current_user):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user_id")
 
@@ -755,7 +761,9 @@ async def send_message(
             
             # Get media encryption service
             from ..redis_cache import cache
+            logger.info(f"DEBUG: Initializing MediaEncryptionService with cache: {cache is not None}")
             media_service = MediaEncryptionService(redis_client=cache)
+            logger.info(f"DEBUG: MediaEncryptionService initialized successfully")
             
             # Generate download token for web clients (device_id will be generated dynamically)
             token = secrets.token_urlsafe(32)
@@ -788,6 +796,10 @@ async def send_message(
     # Create message document (Atlas ObjectId schema)
     msg_type = "file" if message.file_id else "text"
     now = datetime.now(timezone.utc)
+    
+    # DEBUG: Log what file_id is being stored
+    logger.info(f"DEBUG: Storing file_id '{message.file_id}' in message document")
+    
     msg_doc = {
         # Support legacy string chat ids as well.
         "chat_id": chat_key,
@@ -797,7 +809,7 @@ async def send_message(
         "created_at": now,
         # Backward compatibility fields still used in other parts of the codebase
         "text": message.text,
-        "file_id": message.file_id,
+        "file_id": message.file_id,  # This should be the MongoDB _id from files collection
         "download_token": download_token,  # Add download token for file messages
         "language": message.language,
         "reply_to_message_id": message.reply_to_message_id,
@@ -818,6 +830,16 @@ async def send_message(
     result = await messages_collection().insert_one(msg_doc)
     inserted_id = result.inserted_id
     logger.info(f"Message inserted with ID: {inserted_id}")
+    
+    # DEBUG: Verify the file_id in the inserted message
+    if message.file_id:
+        logger.info(f"DEBUG: Verifying message with file_id {message.file_id} was stored correctly")
+        # Double-check what was actually stored
+        stored_msg = await messages_collection().find_one({"_id": inserted_id})
+        if stored_msg and stored_msg.get("file_id"):
+            logger.info(f"DEBUG: Confirmed - file_id in stored message: {stored_msg['file_id']}")
+        else:
+            logger.error(f"DEBUG: ERROR - file_id not found in stored message!")
 
     # Update chat last_message and updated_at
     await chats_collection().update_one(
