@@ -4675,37 +4675,115 @@ async def process_media_ack(
 
 @router.get("/download/{file_id}")
 
-async def download_file(file_id: str, token_data: dict = Depends(verify_jwt_token)):
+async def download_file(file_id: str, request: Request, token_data: dict = Depends(verify_jwt_token)):
 
-    """Compact JWT-validated media download endpoint with anonymous S3 presigned URL fallback"""
+    """Production-ready JWT-validated download with S3 verification and clear error messages"""
 
-    # Fetch s3_key from your DB using file_id
+    # Step 1: Validate file_id format
 
     from bson import ObjectId
 
     if not ObjectId.is_valid(file_id):
 
-        raise HTTPException(404, "File not found")
+        raise HTTPException(status_code=404, detail="Invalid file ID format")
 
     file_oid = ObjectId(file_id)
+
+    # Step 2: Check database for file existence
 
     file_doc = await files_collection().find_one({"_id": file_oid})
 
     if not file_doc:
 
-        raise HTTPException(404, "File not found")
+        raise HTTPException(status_code=404, detail="File not found in database")
 
+    # Step 3: Check storage type and get appropriate key
+    storage_type = file_doc.get("storage_type", "s3")
     s3_key = file_doc.get("s3_key")
-
+    storage_path = file_doc.get("storage_path")
+    
+    if storage_type == "local":
+        # Local file handling
+        if not storage_path:
+            raise HTTPException(status_code=404, detail="Local file path missing in database")
+        
+        # For local files, return direct download URL or file info
+        return {
+            "url": f"/api/v1/files/local/{file_id}",
+            "authenticated": token_data is not None,
+            "file_id": file_id,
+            "storage_type": "local",
+            "filename": file_doc.get("filename", "download"),
+            "size": file_doc.get("size", 0)
+        }
+    
+    # S3 file handling
     if not s3_key:
+        raise HTTPException(status_code=404, detail="File S3 key missing in database")
 
-        raise HTTPException(404, "File S3 key not found")
+    # Step 4: Verify S3 object actually exists
+    try:
+        s3_client = get_s3_client()
+        s3_client.head_object(Bucket=AWS_S3_BUCKET, Key=s3_key)
+    except Exception as e:
+        _log("error", f"S3 object not found for key: {s3_key}", {"error": str(e), "file_id": file_id})
+        raise HTTPException(status_code=404, detail="File not found in S3 storage")
 
-    url = generate_presigned_url(s3_key)
+    # Step 5: Generate presigned URL
+    try:
+        url = generate_presigned_url(s3_key)
+    except Exception as e:
+        _log("error", f"Failed to generate presigned URL", {"error": str(e), "s3_key": s3_key})
+        raise HTTPException(status_code=500, detail="Failed to generate download URL")
 
-    return {"url": url, "anonymous": token_data is None}
+    # Step 6: Return response with authentication status
+    return {
+        "url": url,
+        "authenticated": token_data is not None,
+        "file_id": file_id,
+        "storage_type": "s3",
+        "expires_in": 3600
+    }
 
 
+
+
+
+@router.get("/local/{file_id}")
+async def download_local_file(file_id: str, token_data: dict = Depends(verify_jwt_token)):
+    """Download locally stored files"""
+    from bson import ObjectId
+    import os
+    from fastapi.responses import FileResponse
+    
+    if not ObjectId.is_valid(file_id):
+        raise HTTPException(status_code=404, detail="Invalid file ID format")
+    
+    file_oid = ObjectId(file_id)
+    file_doc = await files_collection().find_one({"_id": file_oid})
+    
+    if not file_doc:
+        raise HTTPException(status_code=404, detail="File not found in database")
+    
+    storage_type = file_doc.get("storage_type", "s3")
+    if storage_type != "local":
+        raise HTTPException(status_code=400, detail="This endpoint only handles local files")
+    
+    storage_path = file_doc.get("storage_path")
+    if not storage_path:
+        raise HTTPException(status_code=404, detail="Local file path missing")
+    
+    # Check if file exists on filesystem
+    if not os.path.exists(storage_path):
+        raise HTTPException(status_code=404, detail="File not found on server")
+    
+    filename = file_doc.get("filename", "download")
+    
+    return FileResponse(
+        path=storage_path,
+        filename=filename,
+        media_type=file_doc.get("mime_type", "application/octet-stream")
+    )
 
 
 
