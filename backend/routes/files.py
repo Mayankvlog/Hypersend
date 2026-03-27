@@ -1,13 +1,8 @@
 import os
-
 import re
-
 import hashlib
-
 import uuid
-
 import json
-
 import math
 
 import logging
@@ -28,8 +23,9 @@ from io import BytesIO
 
 from datetime import datetime, timezone, timedelta
 
+import jwt
+import boto3
 import mimetypes
-
 import aiofiles
 
 
@@ -45,27 +41,18 @@ from cryptography.hazmat.backends import default_backend
 
 
 from fastapi import (
-
     APIRouter,
-
-    HTTPException,
-
-    UploadFile,
-
-    File,
-
-    Form,
-
-    Depends,
-
     Request,
-
-    status,
-
+    HTTPException,
+    Depends,
     Query,
-
+    status,
+    Response,
     BackgroundTasks,
-
+    UploadFile,
+    File,
+    Form,
+    Header,
 )
 
 from fastapi.responses import (
@@ -1179,6 +1166,31 @@ def create_error_response(
 
 
 
+
+
+# Compact JWT validation for media download endpoint
+def verify_jwt_token(request: Request):
+    """Compact JWT validation that allows anonymous fallback for S3 presigned URLs"""
+    token = request.headers.get("Authorization")
+    if token and token.startswith("Bearer "):
+        token = token.split("Bearer ")[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+            return payload
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(401, "Token expired")
+        except jwt.InvalidTokenError:
+            raise HTTPException(401, "Invalid token")
+    return None  # allow anonymous fallback
+
+def generate_presigned_url(s3_key: str):
+    """Generate S3 presigned URL for download"""
+    s3 = boto3.client("s3")
+    return s3.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": settings.S3_BUCKET, "Key": s3_key},
+        ExpiresIn=3600
+    )
 
 
 # Create separate routers for different purposes
@@ -4663,191 +4675,35 @@ async def process_media_ack(
 
 @router.get("/download/{file_id}")
 
-async def download_media(
+async def download_file(file_id: str, token_data: dict = Depends(verify_jwt_token)):
 
-    file_id: str,
+    """Compact JWT-validated media download endpoint with anonymous S3 presigned URL fallback"""
 
-    device_id: Optional[str] = Query(
+    # Fetch s3_key from your DB using file_id
 
-        None, description="Device ID (optional for web clients)"
+    from bson import ObjectId
 
-    ),
+    if not ObjectId.is_valid(file_id):
 
-    current_user: str = Depends(get_current_user_download_dependency()),
+        raise HTTPException(404, "File not found")
 
-):
+    file_oid = ObjectId(file_id)
 
-    """Download media using direct S3 presigned URL - ENHANCED: Allows anonymous access for presigned URLs"""
+    file_doc = await files_collection().find_one({"_id": file_oid})
 
-    try:
+    if not file_doc:
 
-        # ENHANCED: Generate device_id when missing to improve compatibility
+        raise HTTPException(404, "File not found")
 
-        if not device_id:
+    s3_key = file_doc.get("s3_key")
 
-            device_id = f"media_temp_{int(time.time())}"
+    if not s3_key:
 
-            _log(
+        raise HTTPException(404, "File S3 key not found")
 
-                "info",
+    url = generate_presigned_url(s3_key)
 
-                "Generated temporary device_id for media download",
-
-                {
-
-                    "file_id": file_id,
-
-                    "generated_device_id": device_id,
-
-                },
-
-            )
-
-
-
-        # Get file metadata from database
-        from bson import ObjectId
-        
-        # Validate and convert file_id to ObjectId
-        if not ObjectId.is_valid(file_id):
-            _log("warning", f"Invalid ObjectId format in download_media: {file_id}", {"user_id": current_user})
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="File not found - invalid file ID format"
-            )
-        
-        file_oid = ObjectId(file_id)
-        file_doc = await files_collection().find_one({"_id": file_oid})
-
-        if not file_doc:
-
-            raise HTTPException(
-
-                status_code=status.HTTP_404_NOT_FOUND,
-
-                detail="File not found",
-
-            )
-
-
-
-        # Check ownership - ENHANCED: Allow anonymous users for presigned URL access
-        if current_user == "anonymous_user":
-            _log("info", f"🔓 ANONYMOUS MEDIA DOWNLOAD: Allowing presigned URL for file: {file_id}", {
-                "file_id": file_id,
-                "reason": "Anonymous user gets presigned URL (security via URL)",
-                "s3_key": file_doc.get("s3_key")
-            })
-            # Allow anonymous users to get presigned URLs
-        elif (
-            file_doc.get("sender_user_id") != current_user
-            and file_doc.get("recipient_user_id") != current_user
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
-            )
-
-
-
-        # Get S3 client
-
-        s3_client = _get_s3_client()
-
-        if not s3_client:
-
-            raise HTTPException(
-
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-
-                detail="S3 service not available",
-
-            )
-
-
-
-        # Get S3 key from file metadata
-
-        s3_key = file_doc.get("s3_key")
-
-        if not s3_key:
-
-            raise HTTPException(
-
-                status_code=status.HTTP_404_NOT_FOUND,
-
-                detail="File S3 key not found",
-
-            )
-
-
-
-        # Generate presigned URL for download (5 minutes expiry)
-
-        bucket = settings.S3_BUCKET
-
-        s3_url = s3_client.generate_presigned_url(
-
-            'get_object',
-
-            Params={'Bucket': bucket, 'Key': s3_key},
-
-            ExpiresIn=300  # 5 minutes
-
-        )
-
-
-
-        _log("info", f"Generated S3 presigned download URL", {
-
-            "file_id": file_id,
-
-            "device_id": device_id,
-
-            "s3_key": s3_key,
-
-        })
-
-
-
-        return {
-
-            "status": "SUCCESS",
-
-            "status_code": 200,
-
-            "data": {
-
-                "download_url": s3_url
-
-            }
-
-        }
-
-    except HTTPException:
-
-        raise
-
-    except Exception as e:
-
-        _log(
-
-            "error",
-
-            f"Failed to generate download URL: {str(e)}",
-
-            {"user_id": current_user, "file_id": file_id, "operation": "download_media"},
-
-        )
-
-        raise HTTPException(
-
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-
-            detail="Failed to generate download URL",
-
-        )
-
-
+    return {"url": url, "anonymous": token_data is None}
 
 
 
