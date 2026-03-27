@@ -1994,11 +1994,17 @@ Future<void> postToChannel(String channelId, String text) async {
             contentType: 'multipart/form-data',
             sendTimeout: const Duration(minutes: 30),
             receiveTimeout: const Duration(minutes: 30),
-            headers: _mergeAuthHeaders({
+            headers: {
               if (chunkChecksum != null) 'x-chunk-checksum': chunkChecksum,
-            }),
+              // CRITICAL FIX: Don't set Authorization header - rely on HTTPOnly cookies
+              // The interceptor will automatically set withCredentials: true for cookies
+            },
             followRedirects: false,
             validateStatus: (status) => status != null && status < 500,
+            // CRITICAL: Ensure HTTPOnly cookies are sent for Flutter Web
+            extra: {
+              'withCredentials': true,
+            },
           ),
         );
         
@@ -2144,14 +2150,9 @@ Future<void> postToChannel(String channelId, String text) async {
     }
     
     try {
-      // CRITICAL FIX: Get current access token and verify it exists
-      final accessToken = serviceProvider.authService.accessToken;
-      if (accessToken == null) {
-        _log('[DOWNLOAD] ERROR: No access token available');
-        throw Exception('User not authenticated - cannot download file');
-      }
-      
-      _log('[DOWNLOAD] Using token: ${accessToken.substring(0, 10)}...');
+      // CRITICAL FIX: HTTPOnly cookies are used for authentication, not access tokens
+      // The browser will automatically send HTTPOnly cookies with withCredentials: true
+      _log('[DOWNLOAD] Using HTTPOnly cookies for authentication');
       
       await _dio.download(
         '${ApiConstants.baseUrl}/files/download/$fileId',
@@ -2159,12 +2160,17 @@ Future<void> postToChannel(String channelId, String text) async {
         onReceiveProgress: onReceiveProgress,
         options: Options(
           headers: {
-            'Authorization': 'Bearer $accessToken',
+            // CRITICAL FIX: Don't set Authorization header - rely on HTTPOnly cookies
+            // 'Authorization': 'Bearer $accessToken', // REMOVED - use cookies instead
             'Accept': 'application/octet-stream',
             'Cache-Control': 'no-cache',
           },
           receiveTimeout: Duration(minutes: 30),
           sendTimeout: Duration(minutes: 30),
+          // CRITICAL: Ensure HTTPOnly cookies are sent for Flutter Web
+          extra: {
+            'withCredentials': true,
+          },
         ),
       );
     } on DioException catch (e) {
@@ -2220,14 +2226,9 @@ Future<void> postToChannel(String channelId, String text) async {
     try {
       _log('[DOWNLOAD] Starting download: $fileId -> $savePath');
       
-      // CRITICAL FIX: Use correct backend endpoint with proper authentication
-      final accessToken = serviceProvider.authService.accessToken;
-      if (accessToken == null) {
-        _log('[DOWNLOAD] ERROR: No access token available');
-        throw Exception('User not authenticated - cannot download file');
-      }
-      
-      _log('[DOWNLOAD] Using token: ${accessToken.substring(0, 10)}...');
+      // CRITICAL FIX: HTTPOnly cookies are used for authentication, not access tokens
+      // The browser will automatically send HTTPOnly cookies with withCredentials: true
+      _log('[DOWNLOAD] Using HTTPOnly cookies for authentication');
       
       await _dio.download(
         '${ApiConstants.baseUrl}/files/download/$fileId',
@@ -2240,12 +2241,17 @@ Future<void> postToChannel(String channelId, String text) async {
         options: Options(
           responseType: ResponseType.bytes,
           headers: {
-            'Authorization': 'Bearer $accessToken',
+            // CRITICAL FIX: Don't set Authorization header - rely on HTTPOnly cookies
+            // 'Authorization': 'Bearer $accessToken', // REMOVED - use cookies instead
             'Accept': 'application/octet-stream, image/*, video/*, application/pdf, */*',
             'Cache-Control': 'no-cache',
           },
           receiveTimeout: Duration(minutes: 30),
           sendTimeout: Duration(minutes: 30),
+          // CRITICAL: Ensure HTTPOnly cookies are sent for Flutter Web
+          extra: {
+            'withCredentials': true,
+          },
         ),
       );
       
@@ -2271,24 +2277,24 @@ Future<void> postToChannel(String channelId, String text) async {
   }
 
   Future<Response<Uint8List>> downloadFileBytes(String fileId) async {
-    // CRITICAL FIX: Get current access token and verify it exists
-    final accessToken = serviceProvider.authService.accessToken;
-    if (accessToken == null) {
-      _log('[DOWNLOAD] ERROR: No access token available for download');
-      throw Exception('User not authenticated - cannot download file');
-    }
+    // CRITICAL FIX: HTTPOnly cookies are used for authentication, not access tokens
+    // The browser will automatically send HTTPOnly cookies with withCredentials: true
+    _log('[DOWNLOAD] Using HTTPOnly cookies for bytes download');
     
-    _log('[DOWNLOAD] Using token for bytes download: ${accessToken.substring(0, 10)}...');
-    
-    // CRITICAL FIX: Use correct backend endpoint with proper authentication
+    // CRITICAL FIX: Use correct backend endpoint with HTTPOnly cookie authentication
     return await _dio.get<Uint8List>(
       '${ApiConstants.baseUrl}/files/download/$fileId',
       options: Options(
         responseType: ResponseType.bytes,
         followRedirects: false,  // Allow manual redirect handling
         headers: {
-          'Authorization': 'Bearer $accessToken',
+          // CRITICAL FIX: Don't set Authorization header - rely on HTTPOnly cookies
+          // 'Authorization': 'Bearer $accessToken', // REMOVED - use cookies instead
           'Accept': 'application/octet-stream, image/*, video/*, */*',
+        },
+        // CRITICAL: Ensure HTTPOnly cookies are sent for Flutter Web
+        extra: {
+          'withCredentials': true,
         },
       ),
     );
@@ -2365,22 +2371,25 @@ Future<void> postToChannel(String channelId, String text) async {
           
           _log('[DOWNLOAD_LARGE] Downloading chunk: $downloadedBytes-$endByte');
           
-          // CRITICAL FIX: Use correct backend endpoint with proper authentication
-          final accessToken = serviceProvider.authService.accessToken;
-          if (accessToken == null) {
-            throw Exception('User not authenticated - cannot download file chunk');
-          }
+          // CRITICAL FIX: HTTPOnly cookies are used for authentication, not access tokens
+          // The browser will automatically send HTTPOnly cookies with withCredentials: true
+          _log('[DOWNLOAD_LARGE] Using HTTPOnly cookies for chunk download');
           
           final response = await _dio.get(
             '${ApiConstants.baseUrl}/files/download/$fileId',
             options: Options(
               responseType: ResponseType.bytes,
               headers: {
-                'Authorization': 'Bearer $accessToken',
+                // CRITICAL FIX: Don't set Authorization header - rely on HTTPOnly cookies
+                // 'Authorization': 'Bearer $accessToken', // REMOVED - use cookies instead
                 'Range': 'bytes=$downloadedBytes-$endByte',
               },
               receiveTimeout: Duration(minutes: 10),
               sendTimeout: Duration(minutes: 5),
+              // CRITICAL: Ensure HTTPOnly cookies are sent for Flutter Web
+              extra: {
+                'withCredentials': true,
+              },
             ),
           );
           
