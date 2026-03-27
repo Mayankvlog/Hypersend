@@ -2144,23 +2144,25 @@ Future<void> postToChannel(String channelId, String text) async {
     }
     
     try {
-      // Get current access token for query parameter authentication
+      // CRITICAL FIX: Get current access token and verify it exists
       final accessToken = serviceProvider.authService.accessToken;
-      
-      String url = '${ApiConstants.mediaUrl}/$fileId?download=true';
-      if (accessToken != null) {
-        url += '&token=$accessToken';
+      if (accessToken == null) {
+        _log('[DOWNLOAD] ERROR: No access token available');
+        throw Exception('User not authenticated - cannot download file');
       }
       
+      _log('[DOWNLOAD] Using token: ${accessToken.substring(0, 10)}...');
+      
       await _dio.download(
-        url,
+        '${ApiConstants.baseUrl}/files/download/$fileId',
         savePath,
         onReceiveProgress: onReceiveProgress,
         options: Options(
-          headers: _mergeAuthHeaders({
+          headers: {
+            'Authorization': 'Bearer $accessToken',
             'Accept': 'application/octet-stream',
             'Cache-Control': 'no-cache',
-          }),
+          },
           receiveTimeout: Duration(minutes: 30),
           sendTimeout: Duration(minutes: 30),
         ),
@@ -2218,8 +2220,17 @@ Future<void> postToChannel(String channelId, String text) async {
     try {
       _log('[DOWNLOAD] Starting download: $fileId -> $savePath');
       
+      // CRITICAL FIX: Use correct backend endpoint with proper authentication
+      final accessToken = serviceProvider.authService.accessToken;
+      if (accessToken == null) {
+        _log('[DOWNLOAD] ERROR: No access token available');
+        throw Exception('User not authenticated - cannot download file');
+      }
+      
+      _log('[DOWNLOAD] Using token: ${accessToken.substring(0, 10)}...');
+      
       await _dio.download(
-        '${ApiConstants.mediaUrl}/$fileId?download=true',
+        '${ApiConstants.baseUrl}/files/download/$fileId',
         savePath,
         onReceiveProgress: (received, total) {
           if (total > 0) {
@@ -2228,10 +2239,11 @@ Future<void> postToChannel(String channelId, String text) async {
         },
         options: Options(
           responseType: ResponseType.bytes,
-          headers: _mergeAuthHeaders({
+          headers: {
+            'Authorization': 'Bearer $accessToken',
             'Accept': 'application/octet-stream, image/*, video/*, application/pdf, */*',
             'Cache-Control': 'no-cache',
-          }),
+          },
           receiveTimeout: Duration(minutes: 30),
           sendTimeout: Duration(minutes: 30),
         ),
@@ -2259,22 +2271,25 @@ Future<void> postToChannel(String channelId, String text) async {
   }
 
   Future<Response<Uint8List>> downloadFileBytes(String fileId) async {
-    // Get current access token for query parameter authentication
+    // CRITICAL FIX: Get current access token and verify it exists
     final accessToken = serviceProvider.authService.accessToken;
-    
-    String url = '${ApiConstants.mediaUrl}/$fileId?download=true';
-    if (accessToken != null) {
-      url += '&token=$accessToken';
+    if (accessToken == null) {
+      _log('[DOWNLOAD] ERROR: No access token available for download');
+      throw Exception('User not authenticated - cannot download file');
     }
     
+    _log('[DOWNLOAD] Using token for bytes download: ${accessToken.substring(0, 10)}...');
+    
+    // CRITICAL FIX: Use correct backend endpoint with proper authentication
     return await _dio.get<Uint8List>(
-      url,
+      '${ApiConstants.baseUrl}/files/download/$fileId',
       options: Options(
         responseType: ResponseType.bytes,
         followRedirects: false,  // Allow manual redirect handling
-        headers: _mergeAuthHeaders({
+        headers: {
+          'Authorization': 'Bearer $accessToken',
           'Accept': 'application/octet-stream, image/*, video/*, */*',
-        }),
+        },
       ),
     );
   }
@@ -2350,11 +2365,20 @@ Future<void> postToChannel(String channelId, String text) async {
           
           _log('[DOWNLOAD_LARGE] Downloading chunk: $downloadedBytes-$endByte');
           
+          // CRITICAL FIX: Use correct backend endpoint with proper authentication
+          final accessToken = serviceProvider.authService.accessToken;
+          if (accessToken == null) {
+            throw Exception('User not authenticated - cannot download file chunk');
+          }
+          
           final response = await _dio.get(
-            '${ApiConstants.mediaUrl}/$fileId?download=true',
+            '${ApiConstants.baseUrl}/files/download/$fileId',
             options: Options(
               responseType: ResponseType.bytes,
-              headers: _mergeAuthHeaders({'Range': 'bytes=$downloadedBytes-$endByte'}),
+              headers: {
+                'Authorization': 'Bearer $accessToken',
+                'Range': 'bytes=$downloadedBytes-$endByte',
+              },
               receiveTimeout: Duration(minutes: 10),
               sendTimeout: Duration(minutes: 5),
             ),
