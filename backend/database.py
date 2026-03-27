@@ -10,9 +10,6 @@ from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
-# NOTE: Environment variables are already loaded by config.py
-# Do NOT reload .env files here to prevent duplicate initialization
-
 # Global database connection variables as specified
 client = None
 db = None
