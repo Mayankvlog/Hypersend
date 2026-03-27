@@ -198,62 +198,66 @@ class FileTransferService {
     }
   }
 
-  /// Download file using presigned URL when available (bypasses 403 errors)
+  /// Download file with JWT authentication (primary method for private files)
+  /// Falls back to presigned URL only if JWT auth fails
   Future<void> downloadFileUsingPresignedUrl({
     required String fileId,
     required String fileName,
     required String savePath,
     required Function(double) onProgress,
   }) async {
-    // First check if we have a transfer with a presigned URL
-    final transfer = _transfers.firstWhere(
-      (t) => t.id == fileId && t.downloadUrl != null,
-      orElse: () => FileTransfer(
-        id: fileId,
-        fileName: fileName,
-        fileSize: 0,
-        filePath: savePath,
-        chatId: '',
-        status: TransferStatus.downloading,
-        direction: TransferDirection.download,
-        progress: 0.0,
-      ),
-    );
-
-    if (transfer.downloadUrl != null) {
-      debugPrint('[FILE_TRANSFER] Using presigned URL for download: ${transfer.downloadUrl!.length > 50 ? '${transfer.downloadUrl!.substring(0, 50)}...' : transfer.downloadUrl}');
-      
-      try {
-        await _api.downloadFileUsingPresignedUrl(
-          presignedUrl: transfer.downloadUrl!,
-          savePath: savePath,
-          onReceiveProgress: (received, total) {
-            if (total > 0) {
-              final progress = received / total;
-              onProgress(progress);
-            }
-          },
-        );
-        debugPrint('[FILE_TRANSFER] Presigned URL download completed: $savePath');
-      } catch (e) {
-        debugPrint('[FILE_TRANSFER] Presigned URL download failed, falling back to regular download: $e');
-        // Fallback to regular download if presigned URL fails
-        await downloadFile(
-          fileId: fileId,
-          fileName: fileName,
-          savePath: savePath,
-          onProgress: onProgress,
-        );
-      }
-    } else {
-      debugPrint('[FILE_TRANSFER] No presigned URL found, using regular download');
-      // Fallback to regular download
+    debugPrint('[FILE_TRANSFER] Starting download with JWT authentication for file: $fileId');
+    
+    // First try JWT authenticated download (required for private files)
+    try {
       await downloadFile(
         fileId: fileId,
         fileName: fileName,
         savePath: savePath,
         onProgress: onProgress,
       );
+      debugPrint('[FILE_TRANSFER] JWT authenticated download successful');
+      return;
+    } catch (e) {
+      debugPrint('[FILE_TRANSFER] JWT authenticated download failed: $e');
+      
+      // Check if we have a presigned URL as fallback
+      final transfer = _transfers.firstWhere(
+        (t) => t.id == fileId && t.downloadUrl != null,
+        orElse: () => FileTransfer(
+          id: fileId,
+          fileName: fileName,
+          fileSize: 0,
+          filePath: savePath,
+          chatId: '',
+          status: TransferStatus.downloading,
+          direction: TransferDirection.download,
+          progress: 0.0,
+        ),
+      );
+
+      if (transfer.downloadUrl != null) {
+        debugPrint('[FILE_TRANSFER] Falling back to presigned URL for download: ${transfer.downloadUrl!.length > 50 ? '${transfer.downloadUrl!.substring(0, 50)}...' : transfer.downloadUrl}');
+        
+        try {
+          await _api.downloadFileUsingPresignedUrl(
+            presignedUrl: transfer.downloadUrl!,
+            savePath: savePath,
+            onReceiveProgress: (received, total) {
+              if (total > 0) {
+                onProgress(received / total);
+              }
+            },
+          );
+          debugPrint('[FILE_TRANSFER] Presigned URL download completed: $savePath');
+        } catch (presignedError) {
+          debugPrint('[FILE_TRANSFER] Presigned URL download also failed: $presignedError');
+          throw Exception('Both JWT and presigned URL downloads failed. JWT error: $e, Presigned error: $presignedError');
+        }
+      } else {
+        debugPrint('[FILE_TRANSFER] No presigned URL available, re-throwing JWT auth error');
+        rethrow;
+      }
     }
   }
 
