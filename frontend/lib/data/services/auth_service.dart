@@ -238,14 +238,17 @@ class AuthService {
         throw Exception(errorDetail);
       }
       
-      // Store JWT tokens for Authorization header usage (e.g., file downloads)
+      // CRITICAL: Store JWT tokens securely for Authorization header usage
       if (result.containsKey('access_token')) {
         _accessToken = result['access_token'] as String;
-        debugPrint('[AUTH_LOGIN] Access token stored for Authorization headers');
+        debugPrint('[AUTH_LOGIN] ✓ Access token stored securely for Authorization headers');
+      } else {
+        debugPrint('[WARNING] ❌ No access_token in login response - Authorization headers will not work');
       }
+      
       if (result.containsKey('refresh_token')) {
         _refreshToken = result['refresh_token'] as String;
-        debugPrint('[AUTH_LOGIN] Refresh token stored for session management');
+        debugPrint('[AUTH_LOGIN] ✓ Refresh token stored for session management');
       }
       
       // With HTTPOnly cookies, we don't need to handle tokens manually
@@ -359,7 +362,7 @@ class AuthService {
   }
 
   
-  // New method to refresh session using HTTPOnly cookies
+  // New method to refresh session using HTTPOnly cookies and update JWT tokens
   Future<bool> refreshSession() async {
     try {
       debugPrint('[AUTH_REFRESH] Attempting to refresh session...');
@@ -368,14 +371,26 @@ class AuthService {
       final response = await _api.refreshSession();
       
       if (response.containsKey('message') && response['message'] == 'Session refreshed') {
-        debugPrint('[AUTH_REFRESH] Session refreshed successfully');
+        debugPrint('[AUTH_REFRESH] ✓ Session refreshed successfully');
+        
+        // CRITICAL: Check if new JWT tokens are provided in refresh response
+        if (response.containsKey('access_token')) {
+          _accessToken = response['access_token'] as String;
+          debugPrint('[AUTH_REFRESH] ✓ New access token stored for Authorization headers');
+        }
+        
+        if (response.containsKey('refresh_token')) {
+          _refreshToken = response['refresh_token'] as String;
+          debugPrint('[AUTH_REFRESH] ✓ New refresh token stored');
+        }
+        
         return true;
       } else {
-        debugPrint('[AUTH_REFRESH] Session refresh failed: $response');
+        debugPrint('[AUTH_REFRESH] ❌ Session refresh failed: $response');
         return false;
       }
     } catch (e) {
-      debugPrint('[AUTH_REFRESH] Session refresh error: $e');
+      debugPrint('[AUTH_REFRESH] ❌ Session refresh error: $e');
       return false;
     }
   }

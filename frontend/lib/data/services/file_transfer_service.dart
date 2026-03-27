@@ -122,6 +122,7 @@ class FileTransferService {
         mime: mime,
         chatId: chatId,
       );
+      debugPrint('[FILE_TRANSFER] ✓ initUpload called with JWT authentication');
 
       final uploadUrl = init['upload_url'] as String?;
       if (uploadUrl == null) {
@@ -173,6 +174,7 @@ class FileTransferService {
       
       // WHATSAPP ARCHITECTURE: Notify server of successful upload and get download URL
       final completionResponse = await _api.completeUpload(uploadId: init['uploadId'] as String);
+      debugPrint('[FILE_TRANSFER] ✓ completeUpload called with JWT authentication');
       
       // Store and return the presigned download URL if available
       String? downloadUrl = completionResponse['download_url'] as String?;

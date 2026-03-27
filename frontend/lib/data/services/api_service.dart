@@ -31,22 +31,13 @@ class ApiService {
     }
   }
 
-  Map<String, dynamic> _mergeAuthHeaders(Map<String, dynamic> headers) {
-    final merged = <String, dynamic>{};
-    final auth = _dio.options.headers['Authorization'];
-    if (auth != null) {
-      merged['Authorization'] = auth;
-    }
-    merged.addAll(headers);
-    return merged;
-  }
-
-  // Generic GET method for API requests
+  // Generic GET method with automatic Authorization header
   Future<Response> get(String path, {Map<String, dynamic>? queryParameters}) async {
     try {
       _log('[API_GET] GET request to: $path');
-      final response = await _dio.get(
-        path,
+      final response = await _makeAuthenticatedRequest(
+        method: 'GET',
+        path: path,
         queryParameters: queryParameters,
       );
       _log('[API_GET] Success: ${response.statusCode}');
@@ -64,15 +55,96 @@ class ApiService {
       final token = authService.accessToken;
       
       if (token != null && token.isNotEmpty) {
-        _log('[AUTH_TOKEN] Retrieved JWT token for Authorization header');
+        _log('[AUTH_TOKEN] ✓ Retrieved JWT token for Authorization header');
         return 'Bearer $token';
       } else {
-        _log('[AUTH_TOKEN_WARN] No JWT token available - falling back to HTTPOnly cookies');
+        _log('[WARNING] ❌ NO TOKEN FOUND - No JWT token available for Authorization header');
         return null;
       }
     } catch (e) {
       _log('[AUTH_TOKEN_ERROR] Failed to get auth token: $e');
       return null;
+    }
+  }
+
+  // Helper method to attach Authorization header to requests
+  Options _attachAuthHeader(Options? options) {
+    final finalOptions = options ?? Options();
+    final authToken = _getCurrentAuthToken();
+    
+    if (authToken != null) {
+      finalOptions.headers ??= {};
+      finalOptions.headers!['Authorization'] = authToken;
+      _log('[AUTH_HEADER] ✓ Authorization header attached: Bearer [REDACTED]');
+    } else {
+      _log('[WARNING] ❌ NO AUTH HEADER - No token available for request');
+    }
+    
+    return finalOptions;
+  }
+
+  // API call wrapper with automatic Authorization header attachment
+  Future<Response<T>> _makeAuthenticatedRequest<T>({
+    required String method,
+    required String path,
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    try {
+      final authOptions = _attachAuthHeader(options);
+      
+      _log('[AUTH_REQUEST] $method $path - Authorization: ${authOptions.headers?.containsKey('Authorization') == true ? 'PRESENT' : 'MISSING'}');
+      
+      switch (method.toUpperCase()) {
+        case 'GET':
+          return await _dio.get<T>(
+            path,
+            queryParameters: queryParameters,
+            options: authOptions,
+          );
+        case 'POST':
+          return await _dio.post<T>(
+            path,
+            data: data,
+            queryParameters: queryParameters,
+            options: authOptions,
+            onSendProgress: onSendProgress,
+            onReceiveProgress: onReceiveProgress,
+          );
+        case 'PUT':
+          return await _dio.put<T>(
+            path,
+            data: data,
+            queryParameters: queryParameters,
+            options: authOptions,
+            onSendProgress: onSendProgress,
+            onReceiveProgress: onReceiveProgress,
+          );
+        case 'DELETE':
+          return await _dio.delete<T>(
+            path,
+            data: data,
+            queryParameters: queryParameters,
+            options: authOptions,
+          );
+        case 'PATCH':
+          return await _dio.patch<T>(
+            path,
+            data: data,
+            queryParameters: queryParameters,
+            options: authOptions,
+            onSendProgress: onSendProgress,
+            onReceiveProgress: onReceiveProgress,
+          );
+        default:
+          throw UnsupportedError('HTTP method $method is not supported');
+      }
+    } catch (e) {
+      _log('[AUTH_REQUEST_ERROR] $method $path failed: $e');
+      rethrow;
     }
   }
 
@@ -154,7 +226,7 @@ class ApiService {
     
     final urls = [
       '$baseUrl/health',
-      baseUrl.replaceFirst('https://zaply.in.net', 'https://www.zaply.in.net') + '/health',
+      '${baseUrl.replaceFirst('https://zaply.in.net', 'https://www.zaply.in.net')}/health',
     ];
     
     for (String url in urls) {
@@ -1487,7 +1559,10 @@ Future<Map<String, dynamic>> uploadAvatar(Uint8List bytes, String filename) asyn
   Future<Map<String, dynamic>> getFileInfo(String fileId) async {
     try {
       debugPrint('[API_SERVICE] Getting file info for: $fileId');
-      final response = await _dio.get('${ApiConstants.filesEndpoint}/$fileId/info');
+      final response = await _makeAuthenticatedRequest(
+        method: 'GET',
+        path: '${ApiConstants.filesEndpoint}/$fileId/info',
+      );
       debugPrint('[API_SERVICE] File info response: ${response.data}');
       return response.data ?? {};
     } catch (e) {
@@ -1838,7 +1913,7 @@ Future<void> postToChannel(String channelId, String text) async {
     return response.data;
   }
 
-  // Files (resumable upload)
+  // Files (resumable upload) with JWT authentication
   Future<Map<String, dynamic>> initUpload({
     required String filename,
     required int size,
@@ -1862,8 +1937,9 @@ Future<void> postToChannel(String channelId, String text) async {
       }
 
       final uploadEndpoint = endpoint ?? '${ApiConstants.filesEndpoint}/init';
-      final response = await _dio.post(
-        uploadEndpoint,
+      final response = await _makeAuthenticatedRequest(
+        method: 'POST',
+        path: uploadEndpoint,
         data: {
           'file_name': filename,
           'file_size': size,
@@ -2170,7 +2246,10 @@ Future<void> postToChannel(String channelId, String text) async {
   }
 
   Future<Map<String, dynamic>> completeUpload({required String uploadId}) async {
-    final response = await _dio.post('${ApiConstants.filesEndpoint}/$uploadId/complete');
+    final response = await _makeAuthenticatedRequest(
+      method: 'POST',
+      path: '${ApiConstants.filesEndpoint}/$uploadId/complete',
+    );
     return response.data;
   }
 
