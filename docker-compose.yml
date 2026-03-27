@@ -236,7 +236,7 @@ services:
     networks:
       - hypersend_network
     healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost/"]
+      test: ["CMD-SHELL", "wget --spider http://localhost:80/ || exit 1"]
       interval: 30s
       timeout: 10s
       start_period: 5s

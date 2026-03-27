@@ -2753,48 +2753,43 @@ async def complete_upload(
 
 
 
-        # Generate final S3 file URL
-
+        # CRITICAL: Validate S3 upload before marking completion
         s3_key = upload_record.get("s3_key")
-
         if not s3_key:
-
             raise HTTPException(
-
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-
-                detail="S3 key not found in upload record",
-
+                detail="S3 key not found in upload record"
+            )
+        
+        s3_client = _get_s3_client()
+        if not s3_client:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="S3 service not available - cannot complete upload"
+            )
+        
+        # Verify S3 object exists before completing upload
+        try:
+            s3_client.head_object(Bucket=settings.S3_BUCKET, Key=s3_key)
+            _log("info", f"S3 object verified: {s3_key}")
+        except Exception as e:
+            _log("error", f"S3 object verification failed for {s3_key}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"S3 upload verification failed - file not found in S3: {str(e)}"
             )
 
-
-
-        # Generate S3 URL (valid for 1 hour)
-
-        s3_client = _get_s3_client()
-
-        if s3_client:
-
-            try:
-
-                file_url = s3_client.generate_presigned_url(
-
-                    "get_object",
-
-                    Params={"Bucket": settings.S3_BUCKET, "Key": s3_key},
-
-                    ExpiresIn=3600,  # 1 hour
-
-                )
-
-            except Exception as e:
-
-                _log("error", f"Failed to generate S3 URL: {e}")
-
-                file_url = f"https://{settings.S3_BUCKET}.s3.amazonaws.com/{s3_key}"
-
-        else:
-
+        # Generate S3 presigned URL (valid for 1 hour)
+        try:
+            file_url = s3_client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": settings.S3_BUCKET, "Key": s3_key},
+                ExpiresIn=3600,  # 1 hour
+            )
+            _log("info", f"S3 presigned URL generated for {s3_key}")
+        except Exception as e:
+            _log("error", f"Failed to generate S3 presigned URL: {e}")
+            # Fallback to direct S3 URL
             file_url = f"https://{settings.S3_BUCKET}.s3.amazonaws.com/{s3_key}"
 
 
@@ -3542,213 +3537,129 @@ async def download_file(
                 )
 
 
-
         if file_doc:
-
-            # Log file record details for debugging
-
-            _log(
-
-                "info",
-
-                f"File found in database: {file_id}",
-
-                {
-
-                    "file_id": file_id,
-
-                    "has_file_doc": True,
-
-                    "file_doc_keys": list(file_doc.keys()) if file_doc else None,
-
-                }
-
-            )
-
-            
-
-            # ENHANCED: Auto-generate S3 pre-signed URL if no existing token (WhatsApp-like behavior)
-
-            try:
-
-                from backend.config import settings
-
-                s3_client = _get_s3_client()
-
-                
-
-                if s3_client and file_doc.get("object_key"):
-
-                    object_key = file_doc["object_key"]
-
-                    bucket_name = settings.S3_BUCKET
-
-                    
-
-                    # Generate 5-minute pre-signed URL for direct download
-
-                    download_url = s3_client.generate_presigned_url(
-
-                        "get_object",
-
-                        Params={"Bucket": bucket_name, "Key": object_key},
-
-                        ExpiresIn=300,  # 5 minutes
-
-                    )
-
-                    
-
-                    _log(
-
-                        "info",
-
-                        f"Generated temporary S3 pre-signed URL for file: {file_id}",
-
-                        {
-
-                            "file_id": file_id,
-
-                            "object_key": object_key,
-
-                            "bucket": bucket_name,
-
-                            "user_id": current_user,
-
-                            "device_id": device_id,
-
-                        }
-
-                    )
-
-                    
-
-                    # Return response with download URL (WhatsApp-like format)
-
-                    return {
-
-                        "status": "success",
-
-                        "status_code": 200,
-
-                        "detail": "File access granted",
-
-                        "data": {
-
-                            "file_id": file_id,
-
-                            "download_url": download_url,
-
-                            "expires_in": 300,  # 5 minutes
-
-                            "file_name": file_doc.get("file_name", "unknown"),
-
-                            "file_size": file_doc.get("file_size", 0),
-
-                            "mime_type": file_doc.get("mime_type", "application/octet-stream"),
-
-                        }
-
-                    }
-
-                else:
-
-                    # S3 not configured - return 503
-
-                    _log(
-
-                        "error",
-
-                        f"S3 not configured for file download: {file_id}",
-
-                        {
-
-                            "file_id": file_id,
-
-                            "s3_client": s3_client is not None,
-
-                            "object_key": file_doc.get("object_key"),
-
-                        }
-
-                    )
-
-                    return create_error_response(
-
-                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-
-                        message="Storage service not available",
-
-                        error_code="S3_UNAVAILABLE",
-
-                        details={"file_id": file_id},
-
-                    )
-
-                    
-
-            except Exception as s3_error:
-
+            # CRITICAL: Validate file upload status before allowing download
+            file_status = file_doc.get("status", "unknown")
+            if file_status != "completed":
                 _log(
-
-                    "error",
-
-                    f"S3 pre-signed URL generation failed: {s3_error}",
-
+                    "warning",
+                    f"Download denied - file not completed: {file_id} (status: {file_status})",
                     {
-
                         "file_id": file_id,
-
-                        "object_key": file_doc.get("object_key"),
-
-                        "error": str(s3_error),
-
+                        "status": file_status,
+                        "user_id": current_user,
                     }
-
                 )
-
-                return create_error_response(
-
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-
-                    message="Storage service temporarily unavailable",
-
-                    error_code="S3_ERROR",
-
-                    details={"file_id": file_id, "error": str(s3_error)},
-
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"File not available - upload not completed (status: {file_status})"
                 )
-
-        else:
-
-            # Log file not found
-
+            
+            # Log file record details for debugging
             _log(
-
                 "info",
-
-                f"File not found in database: {file_id}",
-
+                f"File found in database: {file_id}",
                 {
-
                     "file_id": file_id,
-
-                    "has_file_doc": False,
-
+                    "has_file_doc": True,
+                    "file_doc_keys": list(file_doc.keys()) if file_doc else None,
+                    "status": file_status,
                 }
-
             )
 
+
+        # ENHANCED: Auto-generate S3 pre-signed URL if no existing token (WhatsApp-like behavior)
+        if file_doc:
+            try:
+                from backend.config import settings
+                s3_client = _get_s3_client()
+                
+                if s3_client and file_doc.get("object_key"):
+                    object_key = file_doc["object_key"]
+                    bucket_name = settings.S3_BUCKET
+                    
+                    # Generate 5-minute pre-signed URL for direct download
+                    download_url = s3_client.generate_presigned_url(
+                        "get_object",
+                        Params={"Bucket": bucket_name, "Key": object_key},
+                        ExpiresIn=300,  # 5 minutes
+                    )
+                    
+                    _log(
+                        "info",
+                        f"Generated temporary S3 pre-signed URL for file: {file_id}",
+                        {
+                            "file_id": file_id,
+                            "object_key": object_key,
+                            "bucket": bucket_name,
+                            "user_id": current_user,
+                            "device_id": device_id,
+                        }
+                    )
+                    
+                    # Return response with download URL (WhatsApp-like format)
+                    return {
+                        "status": "success",
+                        "status_code": 200,
+                        "detail": "File access granted",
+                        "data": {
+                            "file_id": file_id,
+                            "download_url": download_url,
+                            "expires_in": 300,  # 5 minutes
+                            "file_name": file_doc.get("file_name", "unknown"),
+                            "file_size": file_doc.get("file_size", 0),
+                            "mime_type": file_doc.get("mime_type", "application/octet-stream"),
+                        }
+                    }
+                else:
+                    # S3 not configured - return 503
+                    _log(
+                        "error",
+                        f"S3 not configured for file download: {file_id}",
+                        {
+                            "file_id": file_id,
+                            "s3_client": s3_client is not None,
+                            "object_key": file_doc.get("object_key"),
+                        }
+                    )
+                    return create_error_response(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        message="Storage service not available",
+                        error_code="S3_UNAVAILABLE",
+                        details={"file_id": file_id},
+                    )
+                    
+            except Exception as s3_error:
+                _log(
+                    "error",
+                    f"S3 pre-signed URL generation failed: {s3_error}",
+                    {
+                        "file_id": file_id,
+                        "object_key": file_doc.get("object_key"),
+                        "error": str(s3_error),
+                    }
+                )
+                return create_error_response(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    message="Storage service temporarily unavailable",
+                    error_code="S3_ERROR",
+                    details={"file_id": file_id, "error": str(s3_error)},
+                )
+        else:
+            # Log file not found
+            _log(
+                "info",
+                f"File not found in database: {file_id}",
+                {
+                    "file_id": file_id,
+                    "has_file_doc": False,
+                }
+            )
             return create_error_response(
-
                 status_code=status.HTTP_404_NOT_FOUND,
-
                 message="File not found",
-
                 error_code="FILE_NOT_FOUND",
-
                 details={"file_id": file_id},
-
             )
 
 
