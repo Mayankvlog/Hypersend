@@ -344,7 +344,7 @@ class ApiService {
             final authToken = _getCurrentAuthToken();
             if (authToken != null && !options.headers.containsKey('Authorization')) {
               options.headers['Authorization'] = authToken;
-              _log('[AUTH_INTERCEPTOR] Added Authorization header for file download: ${authToken.substring(0, Math.min(20, authToken.length))}...');
+              _log('[AUTH_INTERCEPTOR] Added Authorization header for file download: ${authToken.substring(0, min(20, authToken.length))}...');
             } else if (authToken == null) {
               _log('[AUTH_INTERCEPTOR] WARNING: No token available for file download - will be treated as anonymous');
             }
