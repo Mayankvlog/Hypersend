@@ -46,7 +46,7 @@ class FileTransferService {
       type: FileType.any,
       allowMultiple: false,
     );
-    if (result == null || result.files.isEmpty) return;
+    if (result == null || result.files.isEmpty) return null;
 
     final file = result.files.single;
     if (file.name.isEmpty || file.size <= 0) {

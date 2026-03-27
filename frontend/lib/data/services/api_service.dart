@@ -41,6 +41,22 @@ class ApiService {
     return merged;
   }
 
+  // Generic GET method for API requests
+  Future<Response> get(String path, {Map<String, dynamic>? queryParameters}) async {
+    try {
+      _log('[API_GET] GET request to: $path');
+      final response = await _dio.get(
+        path,
+        queryParameters: queryParameters,
+      );
+      _log('[API_GET] Success: ${response.statusCode}');
+      return response;
+    } catch (e) {
+      _log('[API_GET_ERROR] Failed: $e');
+      rethrow;
+    }
+  }
+
   // Get current JWT token for Authorization headers
   String? _getCurrentAuthToken() {
     try {
