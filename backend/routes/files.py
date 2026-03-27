@@ -3963,9 +3963,17 @@ async def acknowledge_file_delivery(
 
     """
 
-
-
-    file_doc = await files_collection().find_one({"_id": file_id})
+    from bson import ObjectId
+    
+    # Validate and convert file_id to ObjectId
+    if not ObjectId.is_valid(file_id):
+        _log("warning", f"Invalid ObjectId format in acknowledge_file_delivery: {file_id}", {"user_id": current_user})
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="File not found - invalid file ID format"
+        )
+    
+    file_oid = ObjectId(file_id)
+    file_doc = await files_collection().find_one({"_id": file_oid})
 
     if not file_doc:
 
@@ -4634,8 +4642,18 @@ async def download_media(
 
 
         # Get file metadata from database
-
-        file_doc = await files_collection().find_one({"_id": file_id})
+        from bson import ObjectId
+        
+        # Validate and convert file_id to ObjectId
+        if not ObjectId.is_valid(file_id):
+            _log("warning", f"Invalid ObjectId format in download_media: {file_id}", {"user_id": current_user})
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found - invalid file ID format"
+            )
+        
+        file_oid = ObjectId(file_id)
+        file_doc = await files_collection().find_one({"_id": file_oid})
 
         if not file_doc:
 
@@ -4787,9 +4805,21 @@ async def stream_media(
 
     try:
 
+        from bson import ObjectId
+        
+        # Validate and convert file_id to ObjectId
+        if not ObjectId.is_valid(file_id):
+            _log("warning", f"Invalid ObjectId format in stream_media: {file_id}", {"user_id": current_user})
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found - invalid file ID format"
+            )
+        
+        file_oid = ObjectId(file_id)
+
         # Get file metadata from database
 
-        file_doc = await files_collection().find_one({"_id": file_id})
+        file_doc = await files_collection().find_one({"_id": file_oid})
 
         if not file_doc:
 
@@ -7735,11 +7765,19 @@ async def get_shared_users(file_id: str, current_user: str = Depends(get_current
     # Find file
 
     try:
-
+        from bson import ObjectId
+        
+        # Validate and convert file_id to ObjectId
+        if not ObjectId.is_valid(file_id):
+            _log("warning", f"Invalid ObjectId format in get_shared_users: {file_id}", {"user_id": current_user})
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found - invalid file ID format"
+            )
+        
+        file_oid = ObjectId(file_id)
         file_doc = await asyncio.wait_for(
-
-            files_collection().find_one({"_id": file_id}), timeout=30.0
-
+            files_collection().find_one({"_id": file_oid}), timeout=30.0
         )
 
     except asyncio.TimeoutError:
@@ -7823,11 +7861,19 @@ async def revoke_file_access(
     # Find file
 
     try:
-
+        from bson import ObjectId
+        
+        # Validate and convert file_id to ObjectId
+        if not ObjectId.is_valid(file_id):
+            _log("warning", f"Invalid ObjectId format in revoke_file_access: {file_id}", {"user_id": current_user})
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found - invalid file ID format"
+            )
+        
+        file_oid = ObjectId(file_id)
         file_doc = await asyncio.wait_for(
-
-            files_collection().find_one({"_id": file_id}), timeout=30.0
-
+            files_collection().find_one({"_id": file_oid}), timeout=30.0
         )
 
     except asyncio.TimeoutError:
@@ -12145,11 +12191,19 @@ async def save_to_public_directory(
 
 
         # Get file info
-
+        from bson import ObjectId
+        
+        # Validate and convert file_id to ObjectId
+        if not ObjectId.is_valid(file_id):
+            _log("warning", f"Invalid ObjectId format in save_to_public_directory: {file_id}", {"user_id": current_user})
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found - invalid file ID format"
+            )
+        
+        file_oid = ObjectId(file_id)
         file_doc = await asyncio.wait_for(
-
-            files_collection().find_one({"_id": file_id}), timeout=30.0
-
+            files_collection().find_one({"_id": file_oid}), timeout=30.0
         )
 
 
