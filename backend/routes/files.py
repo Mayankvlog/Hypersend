@@ -3389,18 +3389,26 @@ from fastapi import Depends
 
 
 async def get_current_user_for_download_dependency(request: Request) -> str:
-    """Get current user for download operations - allows fallback for S3 direct access"""
+    """Get current user for download operations - supports both Authorization header and query parameter token"""
     try:
         auth_header = request.headers.get("Authorization")
         
-        # ENHANCED: Allow missing token for S3 fallback (WhatsApp-like behavior)
-        if not auth_header or not auth_header.startswith("Bearer "):
-            _log("info", "No auth token provided - will fallback to S3 if available", 
+        # ENHANCED: Check both Authorization header and query parameter token
+        token = None
+        
+        # First try Authorization header
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.replace("Bearer ", "").strip()
+        else:
+            # Fallback to query parameter token (for frontend compatibility)
+            token = request.query_params.get("token")
+            
+        if not token:
+            _log("info", "No auth token provided in header or query params - will fallback to S3 if available", 
                  {"user_agent": request.headers.get("user-agent", "unknown")})
             # Return anonymous user instead of raising exception
             return "anonymous_user"
 
-        token = auth_header.replace("Bearer ", "").strip()
         token_data = decode_token(token)
         return token_data.sub
 
@@ -3621,23 +3629,26 @@ async def download_file(
         # Log incoming headers for debugging auth issues
 
         auth_header = request.headers.get("Authorization")
-
+        query_token = request.query_params.get("token")
+        
         log_data["auth_header_present"] = auth_header is not None
-
+        log_data["query_token_present"] = query_token is not None
+        
+        # Determine token source for logging
+        if auth_header and auth_header.startswith("Bearer "):
+            log_data["token_source"] = "authorization_header"
+        elif query_token:
+            log_data["token_source"] = "query_parameter"
+        else:
+            log_data["token_source"] = "none"
+            
         if auth_header:
-
             log_data["auth_header_prefix"] = auth_header[:20]
 
-
-
         _log(
-
             "info",
-
-            f'File download request - device_id {"present" if device_id else "missing (web client)"}',
-
+            f'File download request - token_source: {log_data["token_source"]}, device_id {"present" if device_id else "missing (web client)"}',
             log_data,
-
         )
 
 
@@ -5133,10 +5144,34 @@ async def get_media_by_id_main(
         chat_id = file_doc.get("chat_id")
         shared_with = file_doc.get("shared_with", [])
 
+        # ENHANCED: Log permission check details
+        _log("info", f"Permission check - owner_id: {owner_id}, current_user: {current_user}, chat_id: {chat_id}", {
+            "file_id": file_id,
+            "owner_id": owner_id,
+            "current_user": current_user,
+            "is_anonymous": current_user == "anonymous_user",
+            "chat_id": chat_id,
+            "shared_with_count": len(shared_with or [])
+        })
+
+        # ENHANCED: Handle anonymous user with better error message
+        if current_user == "anonymous_user":
+            _log("warning", f"Anonymous user access denied for file: {file_id}", {
+                "file_id": file_id,
+                "owner_id": owner_id,
+                "reason": "Authentication required for file download"
+            })
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required - Please login to download files"
+            )
+
         if str(owner_id) == str(current_user):
+            _log("info", f"Owner access granted for file: {file_id}", {"user_id": current_user})
             pass
 
         elif str(current_user) in [str(x) for x in (shared_with or [])]:
+            _log("info", f"Shared access granted for file: {file_id}", {"user_id": current_user})
             pass
 
         elif chat_id:
@@ -5150,24 +5185,45 @@ async def get_media_by_id_main(
 
                 members = chat_doc.get("members", []) if chat_doc else []
                 if not (chat_doc and str(current_user) in [str(m) for m in members]):
+                    _log("warning", f"Chat membership access denied for file: {file_id}", {
+                        "user_id": current_user,
+                        "chat_id": chat_id,
+                        "members_count": len(members),
+                        "is_member": str(current_user) in [str(m) for m in members]
+                    })
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Access denied: you don't have permission to access this media",
                     )
+                else:
+                    _log("info", f"Chat membership access granted for file: {file_id}", {
+                        "user_id": current_user,
+                        "chat_id": chat_id
+                    })
 
             except HTTPException:
                 raise
-            except Exception:
+            except Exception as e:
+                _log("error", f"Chat membership check failed for file: {file_id}", {
+                    "user_id": current_user,
+                    "chat_id": chat_id,
+                    "error": str(e)
+                })
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied: unable to verify chat membership",
                 )
 
         else:
+            _log("warning", f"No access rights for file: {file_id}", {
+                "user_id": current_user,
+                "owner_id": owner_id,
+                "has_chat_id": bool(chat_id),
+                "shared_with_count": len(shared_with or [])
+            })
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied: you don't have permission to access this media",
-
             )
 
 
