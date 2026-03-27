@@ -6,6 +6,7 @@ import 'package:web/web.dart' as html;
 import 'dart:typed_data';
 import 'dart:js_interop';
 import 'package:flutter/foundation.dart' show debugPrint;
+import '../../data/services/service_provider.dart';
 
 // JS interop extensions - using built-in toJS from dart:js_interop
 // These stubs rely on the built-in String.toJS extension method
@@ -160,17 +161,20 @@ Future<void> saveFileDirectFromUrl(String fileName, String downloadUrl) async {
     final serviceProvider = ServiceProvider();
     final accessToken = serviceProvider.authService.accessToken;
     
+    // Create headers map and convert to JS object
+    final headers = <String, String>{
+      // CRITICAL FIX: Add Authorization header for proper authentication
+      if (accessToken != null && accessToken.isNotEmpty)
+        'Authorization': 'Bearer $accessToken',
+      'Accept': 'application/octet-stream, image/*, video/*, application/pdf, */*',
+      'Cache-Control': 'no-cache',
+    };
+    
     // Create proper RequestInit object with Authorization header
     final requestInit = html.RequestInit(
       method: 'GET',
       credentials: 'include',
-      headers: {
-        // CRITICAL FIX: Add Authorization header for proper authentication
-        if (accessToken != null && accessToken.isNotEmpty)
-          'Authorization': 'Bearer $accessToken',
-        'Accept': 'application/octet-stream, image/*, video/*, application/pdf, */*',
-        'Cache-Control': 'no-cache',
-      },
+      headers: headers.jsify() as JSObject,
     );
     
     debugPrint('[FILE_WEB] Request headers: ${requestInit.headers}');
