@@ -1274,7 +1274,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   Future<void> _showImageOptions(Message message, String fileId, String fileName, String contentType) async {
     if (!mounted) return;
     
-    final imageUrl = '${ApiConstants.baseUrl}/files/download/$fileId';
+    final imageUrl = '${ApiConstants.baseUrl}/media/$fileId?download=true';
     
     showDialog(
       context: context,

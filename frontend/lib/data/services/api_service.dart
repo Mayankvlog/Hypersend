@@ -2147,9 +2147,9 @@ Future<void> postToChannel(String channelId, String text) async {
       // Get current access token for query parameter authentication
       final accessToken = serviceProvider.authService.accessToken;
       
-      String url = '${ApiConstants.filesEndpoint}/$fileId/download';
+      String url = '${ApiConstants.mediaUrl}/$fileId?download=true';
       if (accessToken != null) {
-        url += '?dl=1&token=$accessToken';
+        url += '&token=$accessToken';
       }
       
       await _dio.download(
@@ -2219,7 +2219,7 @@ Future<void> postToChannel(String channelId, String text) async {
       _log('[DOWNLOAD] Starting download: $fileId -> $savePath');
       
       await _dio.download(
-        '${ApiConstants.filesEndpoint}/$fileId/download',
+        '${ApiConstants.mediaUrl}/$fileId?download=true',
         savePath,
         onReceiveProgress: (received, total) {
           if (total > 0) {
@@ -2262,9 +2262,9 @@ Future<void> postToChannel(String channelId, String text) async {
     // Get current access token for query parameter authentication
     final accessToken = serviceProvider.authService.accessToken;
     
-    String url = '${ApiConstants.filesEndpoint}/$fileId/download';
+    String url = '${ApiConstants.mediaUrl}/$fileId?download=true';
     if (accessToken != null) {
-      url += '?dl=1&token=$accessToken';
+      url += '&token=$accessToken';
     }
     
     return await _dio.get<Uint8List>(
@@ -2351,7 +2351,7 @@ Future<void> postToChannel(String channelId, String text) async {
           _log('[DOWNLOAD_LARGE] Downloading chunk: $downloadedBytes-$endByte');
           
           final response = await _dio.get(
-            '${ApiConstants.filesEndpoint}/$fileId/download',
+            '${ApiConstants.mediaUrl}/$fileId?download=true',
             options: Options(
               responseType: ResponseType.bytes,
               headers: _mergeAuthHeaders({'Range': 'bytes=$downloadedBytes-$endByte'}),

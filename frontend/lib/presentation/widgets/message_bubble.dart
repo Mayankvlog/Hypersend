@@ -57,7 +57,7 @@ class MessageBubble extends StatelessWidget {
 
   Widget _buildImagePreview(Message message, String fileName) {
     final imageUrl = message.fileId != null 
-        ? '${ApiConstants.baseUrl}/files/download/${message.fileId}'
+        ? '${ApiConstants.baseUrl}/media/${message.fileId}?download=true'
         : null;
     
     if (imageUrl == null) {

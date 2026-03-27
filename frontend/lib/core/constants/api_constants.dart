@@ -1,8 +1,8 @@
 class ApiConstants {
-  // Backend API Base URL - Production URL for zaply.in.net
+  // Backend API Base URL - Local Development URL
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://zaply.in.net/api/v1',  // Production URL
+    defaultValue: 'http://localhost:8000/api/v1',  // Local Development URL
   );
   
   // Dynamic base URL with fallback logic for connectivity issues
