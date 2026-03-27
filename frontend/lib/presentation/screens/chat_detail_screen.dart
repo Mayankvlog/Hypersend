@@ -1515,56 +1515,71 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   Future<void> _openFileInWeb(String fileId, String fileName, bool isPDF) async {
-    try {
-      if (!kIsWeb) {
-        throw Exception('Web-only download helper called on non-web platform');
-      }
-
-      debugPrint('[FILE_WEB] Initiating download for: $fileName');
-      debugPrint('[FILE_WEB] File ID: $fileId');
-
-      final accessToken = serviceProvider.authService.accessToken;
-
-      // Build the download URL with enhanced error handling
-      String downloadUrl;
-      try {
-        // Try multiple endpoint strategies for better compatibility
-        if (fileId.isNotEmpty) {
-          // Strategy 1: Try media endpoint first (preferred)
-          downloadUrl = '${ApiConstants.serverBaseUrl}/api/v1/media/$fileId?download=true&force_download=true';
-          debugPrint('[FILE_WEB] Trying media endpoint: $downloadUrl');
-        } else {
-          // Strategy 2: Fallback to legacy files endpoint
-          downloadUrl = '${ApiConstants.baseUrl}/files/$fileId/download?dl=1&force_download=true';
-          debugPrint('[FILE_WEB] Using legacy endpoint: $downloadUrl');
-        }
-
-        // Add authentication token
-        if (accessToken != null && accessToken.isNotEmpty) {
-          final separator = downloadUrl.contains('?') ? '&' : '?';
-          downloadUrl = '$downloadUrl${separator}token=$accessToken';
-          debugPrint('[FILE_WEB] Added auth token: ${downloadUrl.substring(0, downloadUrl.indexOf('token=') + 10)}...');
-        }
-      } catch (e) {
-        debugPrint('[FILE_WEB_ERROR] URL generation failed: $e');
-        // Ultimate fallback - construct basic URL
-        downloadUrl = '${ApiConstants.baseUrl}/files/$fileId/download?dl=1&force_download=true';
-        if (accessToken != null) {
-          downloadUrl += '&token=$accessToken';
-        }
-      }
-      
-      debugPrint('[FILE_WEB] Download URL: $downloadUrl');
-      
-      // Create an anchor element and trigger download
-      // This is the proper way to handle downloads on web
-      io.saveFileDirectFromUrl(fileName, downloadUrl);
-      
-      debugPrint('[FILE_WEB] Download triggered for $fileName');
-    } catch (e) {
-      debugPrint('[FILE_WEB_ERROR] $e');
-      rethrow;
+    if (!kIsWeb) {
+      throw Exception('Web-only download helper called on non-web platform');
     }
+
+    debugPrint('[FILE_WEB] Initiating download for: $fileName');
+    debugPrint('[FILE_WEB] File ID: $fileId');
+
+    // STRATEGY 1: Try to get a presigned URL from the download endpoint first
+    try {
+      final downloadResponse = await serviceProvider.apiService.get('/files/$fileId/download');
+      
+      if (downloadResponse.statusCode == 200 && downloadResponse.data != null) {
+        final data = downloadResponse.data;
+        final presignedUrl = data['data']?['download_url'] as String?;
+        
+        if (presignedUrl != null && presignedUrl.isNotEmpty) {
+          debugPrint('[FILE_WEB] Using presigned URL for download: ${presignedUrl.length > 50 ? '${presignedUrl.substring(0, 50)}...' : presignedUrl}');
+          io.saveFileDirectFromUrl(fileName, presignedUrl);
+          debugPrint('[FILE_WEB] Presigned URL download triggered for $fileName');
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('[FILE_WEB] Presigned URL attempt failed, falling back to token-based download: $e');
+    }
+
+    // STRATEGY 2: Fallback to token-based download
+    final accessToken = serviceProvider.authService.accessToken;
+
+    // Build the download URL with enhanced error handling
+    String downloadUrl;
+    try {
+      // Try multiple endpoint strategies for better compatibility
+      if (fileId.isNotEmpty) {
+        // Strategy 1: Try media endpoint first (preferred)
+        downloadUrl = '${ApiConstants.serverBaseUrl}/api/v1/media/$fileId?download=true&force_download=true';
+        debugPrint('[FILE_WEB] Trying media endpoint: $downloadUrl');
+      } else {
+        // Strategy 2: Fallback to legacy files endpoint
+        downloadUrl = '${ApiConstants.baseUrl}/files/$fileId/download?dl=1&force_download=true';
+        debugPrint('[FILE_WEB] Using legacy endpoint: $downloadUrl');
+      }
+
+      // Add authentication token
+      if (accessToken != null && accessToken.isNotEmpty) {
+        final separator = downloadUrl.contains('?') ? '&' : '?';
+        downloadUrl = '$downloadUrl${separator}token=$accessToken';
+        debugPrint('[FILE_WEB] Added auth token: ${downloadUrl.substring(0, downloadUrl.indexOf('token=') + 10)}...');
+      }
+    } catch (e) {
+      debugPrint('[FILE_WEB_ERROR] URL generation failed: $e');
+      // Ultimate fallback - construct basic URL
+      downloadUrl = '${ApiConstants.baseUrl}/files/$fileId/download?dl=1&force_download=true';
+      if (accessToken != null) {
+        downloadUrl += '&token=$accessToken';
+      }
+    }
+      
+    debugPrint('[FILE_WEB] Download URL: $downloadUrl');
+      
+    // Create an anchor element and trigger download
+    // This is the proper way to handle downloads on web
+    io.saveFileDirectFromUrl(fileName, downloadUrl);
+      
+    debugPrint('[FILE_WEB] Download triggered for $fileName');
   }
 
   Future<void> _downloadFileInWeb(String fileId, String fileName) async {

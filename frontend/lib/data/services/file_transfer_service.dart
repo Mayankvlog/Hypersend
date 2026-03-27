@@ -36,7 +36,8 @@ class FileTransferService {
   /// WhatsApp-style ephemeral file upload with direct S3 upload.
   /// Server provides pre-signed URL, client uploads directly to S3.
   /// Files are stored temporarily (24h TTL) then auto-deleted.
-  Future<void> pickAndUpload({
+  /// Returns presigned download URL for direct access without auth headers.
+  Future<String?> pickAndUpload({
     required String chatId,
     required Function(double) onProgress,
   }) async {
@@ -60,7 +61,7 @@ class FileTransferService {
 
     final stream = file.readStream ?? (file.bytes != null ? Stream.value(file.bytes!) : null);
 
-    await uploadFileStream(
+    return await uploadFileStream(
       chatId: chatId,
       fileName: file.name,
       fileSize: file.size,
@@ -89,7 +90,7 @@ class FileTransferService {
     }
   }
 
-  Future<void> uploadFileStream({
+  Future<String?> uploadFileStream({
     required String chatId,
     required String fileName,
     required int fileSize,
@@ -173,8 +174,8 @@ class FileTransferService {
       // WHATSAPP ARCHITECTURE: Notify server of successful upload and get download URL
       final completionResponse = await _api.completeUpload(uploadId: init['uploadId'] as String);
       
-      // Store the presigned download URL if available
-      final downloadUrl = completionResponse['download_url'] as String?;
+      // Store and return the presigned download URL if available
+      String? downloadUrl = completionResponse['download_url'] as String?;
       if (downloadUrl != null) {
         final transferIndex = _transfers.indexWhere((t) => t.id == transfer.id);
         if (transferIndex >= 0) {
@@ -185,6 +186,8 @@ class FileTransferService {
       
       _markCompleted(transfer.id);
       debugPrint('[WHATSAPP_UPLOAD] File uploaded successfully to S3');
+      
+      return downloadUrl; // Return the presigned download URL
       
     } catch (e) {
       _markFailed(transfer.id);
