@@ -3056,6 +3056,7 @@ async def complete_upload(
             "success": True,
             "message": "Upload completed successfully",
             "file_url": file_url,
+            "download_url": file_url,  # Presigned URL for direct download (bypasses auth checks)
             "s3_key": s3_key,
             "checksum": "",  # Return empty string for checksum as expected by tests
         }

@@ -170,8 +170,18 @@ class FileTransferService {
         }
       }
       
-      // WHATSAPP ARCHITECTURE: Notify server of successful upload
-      await _api.completeUpload(uploadId: init['uploadId'] as String);
+      // WHATSAPP ARCHITECTURE: Notify server of successful upload and get download URL
+      final completionResponse = await _api.completeUpload(uploadId: init['uploadId'] as String);
+      
+      // Store the presigned download URL if available
+      final downloadUrl = completionResponse['download_url'] as String?;
+      if (downloadUrl != null) {
+        final transferIndex = _transfers.indexWhere((t) => t.id == transfer.id);
+        if (transferIndex >= 0) {
+          _transfers[transferIndex] = _transfers[transferIndex].copyWith(downloadUrl: downloadUrl);
+          debugPrint('[WHATSAPP_UPLOAD] Presigned download URL stored: ${downloadUrl.length > 50 ? '${downloadUrl.substring(0, 50)}...' : downloadUrl}');
+        }
+      }
       
       _markCompleted(transfer.id);
       debugPrint('[WHATSAPP_UPLOAD] File uploaded successfully to S3');
@@ -180,6 +190,65 @@ class FileTransferService {
       _markFailed(transfer.id);
       debugPrint('[WHATSAPP_UPLOAD] Upload failed: $e');
       rethrow;
+    }
+  }
+
+  /// Download file using presigned URL when available (bypasses 403 errors)
+  Future<void> downloadFileUsingPresignedUrl({
+    required String fileId,
+    required String fileName,
+    required String savePath,
+    required Function(double) onProgress,
+  }) async {
+    // First check if we have a transfer with a presigned URL
+    final transfer = _transfers.firstWhere(
+      (t) => t.id == fileId && t.downloadUrl != null,
+      orElse: () => FileTransfer(
+        id: fileId,
+        fileName: fileName,
+        fileSize: 0,
+        filePath: savePath,
+        chatId: '',
+        status: TransferStatus.downloading,
+        direction: TransferDirection.download,
+        progress: 0.0,
+      ),
+    );
+
+    if (transfer.downloadUrl != null) {
+      debugPrint('[FILE_TRANSFER] Using presigned URL for download: ${transfer.downloadUrl!.length > 50 ? '${transfer.downloadUrl!.substring(0, 50)}...' : transfer.downloadUrl}');
+      
+      try {
+        await _api.downloadFileUsingPresignedUrl(
+          presignedUrl: transfer.downloadUrl!,
+          savePath: savePath,
+          onReceiveProgress: (received, total) {
+            if (total > 0) {
+              final progress = received / total;
+              onProgress(progress);
+            }
+          },
+        );
+        debugPrint('[FILE_TRANSFER] Presigned URL download completed: $savePath');
+      } catch (e) {
+        debugPrint('[FILE_TRANSFER] Presigned URL download failed, falling back to regular download: $e');
+        // Fallback to regular download if presigned URL fails
+        await downloadFile(
+          fileId: fileId,
+          fileName: fileName,
+          savePath: savePath,
+          onProgress: onProgress,
+        );
+      }
+    } else {
+      debugPrint('[FILE_TRANSFER] No presigned URL found, using regular download');
+      // Fallback to regular download
+      await downloadFile(
+        fileId: fileId,
+        fileName: fileName,
+        savePath: savePath,
+        onProgress: onProgress,
+      );
     }
   }
 
@@ -382,6 +451,7 @@ class FileTransfer {
   final TransferStatus status;
   final TransferDirection direction;
   final double progress;
+  final String? downloadUrl; // Presigned URL for direct download
 
   FileTransfer({
     required this.id,
@@ -392,6 +462,7 @@ class FileTransfer {
     required this.status,
     required this.direction,
     required this.progress,
+    this.downloadUrl,
   });
 
   FileTransfer copyWith({
@@ -403,6 +474,7 @@ class FileTransfer {
     TransferStatus? status,
     TransferDirection? direction,
     double? progress,
+    String? downloadUrl,
   }) {
     return FileTransfer(
       id: id ?? this.id,
@@ -413,6 +485,7 @@ class FileTransfer {
       status: status ?? this.status,
       direction: direction ?? this.direction,
       progress: progress ?? this.progress,
+      downloadUrl: downloadUrl ?? this.downloadUrl,
     );
   }
 }

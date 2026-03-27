@@ -2508,6 +2508,107 @@ Future<void> postToChannel(String channelId, String text) async {
     }
   }
 
+  // NEW: Download file using presigned URL (bypasses auth checks)
+  Future<void> downloadFileUsingPresignedUrl({
+    required String presignedUrl,
+    required String savePath,
+    void Function(int, int)? onReceiveProgress,
+  }) async {
+    // Web platform does not support filesystem downloads
+    if (kIsWeb) {
+      throw UnsupportedError('File system downloads are not supported on Flutter Web. Use downloadFileBytesUsingPresignedUrl() instead.');
+    }
+    
+    try {
+      _log('[DOWNLOAD_PRESIGNED] Starting download via presigned URL -> $savePath');
+      
+      await _dio.download(
+        presignedUrl,
+        savePath,
+        onReceiveProgress: onReceiveProgress,
+        options: Options(
+          headers: {
+            // No Authorization header needed for presigned URLs
+            'Accept': '*/*',
+          },
+          receiveTimeout: const Duration(minutes: 10),
+          sendTimeout: const Duration(minutes: 10),
+        ),
+      );
+      
+      _log('[DOWNLOAD_PRESIGNED] Download completed: $savePath');
+    } on DioException catch (e) {
+      _log('[DOWNLOAD_PRESIGNED] Error downloading file: ${e.type} - ${e.message}');
+      
+      // Enhanced error handling for presigned URLs
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout) {
+        throw Exception('Download timeout - Please check your internet connection and try again');
+      } else if (e.type == DioExceptionType.connectionError) {
+        throw Exception('Network connection failed - Please check your internet connection');
+      } else if (e.response?.statusCode != null) {
+        final statusCode = e.response!.statusCode!;
+        if (statusCode == 403) {
+          throw Exception('Presigned URL expired - Please request a new download link');
+        } else if (statusCode == 404) {
+          throw Exception('File not found - The file may have been deleted from S3');
+        } else if (statusCode >= 500) {
+          throw Exception('Server error - Please try again later');
+        } else {
+          throw Exception('Download failed with status $statusCode');
+        }
+      } else {
+        throw Exception('Download failed: ${e.message ?? "Unknown error"}');
+      }
+    } catch (e) {
+      _log('[DOWNLOAD_PRESIGNED] Unexpected error: $e');
+      throw Exception('Download failed: $e');
+    }
+  }
+
+  // NEW: Download file bytes using presigned URL (for web platform)
+  Future<Response<Uint8List>> downloadFileBytesUsingPresignedUrl(String presignedUrl) async {
+    try {
+      _log('[DOWNLOAD_PRESIGNED_BYTES] Starting download via presigned URL');
+      
+      return await _dio.get<Uint8List>(
+        presignedUrl,
+        options: Options(
+          responseType: ResponseType.bytes,
+          headers: {
+            // No Authorization header needed for presigned URLs
+            'Accept': '*/*',
+          },
+          receiveTimeout: const Duration(minutes: 10),
+          sendTimeout: const Duration(minutes: 10),
+        ),
+      );
+    } on DioException catch (e) {
+      _log('[DOWNLOAD_PRESIGNED_BYTES] Error downloading file: ${e.type} - ${e.message}');
+      
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout) {
+        throw Exception('Download timeout - Please check your internet connection and try again');
+      } else if (e.response?.statusCode != null) {
+        final statusCode = e.response!.statusCode!;
+        if (statusCode == 403) {
+          throw Exception('Presigned URL expired - Please request a new download link');
+        } else if (statusCode == 404) {
+          throw Exception('File not found - The file may have been deleted from S3');
+        } else if (statusCode >= 500) {
+          throw Exception('Server error - Please try again later');
+        } else {
+          throw Exception('Download failed with status $statusCode');
+        }
+      } else {
+        throw Exception('Download failed: ${e.message ?? "Unknown error"}');
+      }
+    } catch (e) {
+      _log('[DOWNLOAD_PRESIGNED_BYTES] Unexpected error: $e');
+      throw Exception('Download failed: $e');
+    }
+  }
+
   // Settings endpoints
   Future<Map<String, dynamic>> getSettings() async {
     // Not implemented in backend yet (reserved for future)
