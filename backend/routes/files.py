@@ -2517,7 +2517,7 @@ async def upload_chunk(
 
     chunk_index: int,
 
-    current_user: Optional[str] = Depends(get_current_user_optional),
+    current_user: str = Depends(get_current_user),
 
 ):
 
@@ -2597,12 +2597,10 @@ async def upload_chunk(
 
         if os.getenv("PYTEST_CURRENT_TEST") is None:
 
-            if not upload_chunk_limiter.is_allowed(current_user or "anonymous"):
+            if not upload_chunk_limiter.is_allowed(current_user):
 
                 retry_after = upload_chunk_limiter.get_retry_after(
-
-                    current_user or "anonymous"
-
+                    current_user
                 )
 
                 raise HTTPException(
@@ -2848,19 +2846,13 @@ async def upload_chunk(
 @router.put("/{upload_id}/chunk")
 
 async def upload_chunk_put(
-
     upload_id: str,
-
     request: Request,
-
     chunk_index: int = Query(..., description="Chunk index"),
-
-    current_user: Optional[str] = Depends(get_current_user_optional),
-
+    current_user: str = Depends(get_current_user),
 ):
 
     """Upload chunk via PUT method for test compatibility"""
-
     return await upload_chunk(upload_id, request, chunk_index, current_user)
 
 

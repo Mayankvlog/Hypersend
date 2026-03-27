@@ -1994,9 +1994,9 @@ Future<void> postToChannel(String channelId, String text) async {
             contentType: 'multipart/form-data',
             sendTimeout: const Duration(minutes: 30),
             receiveTimeout: const Duration(minutes: 30),
-            headers: {
+            headers: _mergeAuthHeaders({
               if (chunkChecksum != null) 'x-chunk-checksum': chunkChecksum,
-            },
+            }),
             followRedirects: false,
             validateStatus: (status) => status != null && status < 500,
           ),
