@@ -3399,23 +3399,49 @@ async def get_current_user_for_download_dependency(request: Request) -> str:
         # First try Authorization header
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header.replace("Bearer ", "").strip()
+            _log("info", f"🔑 TOKEN FOUND in Authorization header", {
+                "token_length": len(token),
+                "token_prefix": token[:20] if token else "none",
+                "user_agent": request.headers.get("user-agent", "unknown")[:100]
+            })
         else:
             # Fallback to query parameter token (for frontend compatibility)
             token = request.query_params.get("token")
+            if token:
+                _log("info", f"🔑 TOKEN FOUND in query parameter", {
+                    "token_length": len(token),
+                    "token_prefix": token[:20] if token else "none",
+                    "user_agent": request.headers.get("user-agent", "unknown")[:100]
+                })
             
         if not token:
-            _log("info", "No auth token provided in header or query params - will fallback to S3 if available", 
-                 {"user_agent": request.headers.get("user-agent", "unknown")})
+            _log("warning", f"❌ NO TOKEN FOUND in Authorization header or query params", {
+                "auth_header_present": auth_header is not None,
+                "auth_header_value": auth_header[:50] if auth_header else "missing",
+                "query_params": dict(request.query_params),
+                "user_agent": request.headers.get("user-agent", "unknown")[:100]
+            })
             # Return anonymous user instead of raising exception
             return "anonymous_user"
 
         token_data = decode_token(token)
-        return token_data.sub
+        user_id = token_data.sub
+        _log("info", f"✅ TOKEN DECODED SUCCESSFULLY", {
+            "user_id": user_id,
+            "token_length": len(token),
+            "user_agent": request.headers.get("user-agent", "unknown")[:100]
+        })
+        return user_id
 
     except Exception as e:
         # ENHANCED: Log error but allow anonymous access for S3 fallback
-        _log("warning", f"Token validation failed, allowing S3 fallback: {str(e)}", 
-             {"user_agent": request.headers.get("user-agent", "unknown")})
+        _log("error", f"❌ TOKEN VALIDATION FAILED: {str(e)}", {
+            "error_type": type(e).__name__,
+            "error_message": str(e),
+            "auth_header": request.headers.get("Authorization", "missing")[:50] if request.headers.get("Authorization") else "missing",
+            "query_params": dict(request.query_params),
+            "user_agent": request.headers.get("user-agent", "unknown")[:100]
+        })
         # Return anonymous user instead of raising exception
         return "anonymous_user"
 
@@ -5144,22 +5170,29 @@ async def get_media_by_id_main(
         chat_id = file_doc.get("chat_id")
         shared_with = file_doc.get("shared_with", [])
 
-        # ENHANCED: Log permission check details
-        _log("info", f"Permission check - owner_id: {owner_id}, current_user: {current_user}, chat_id: {chat_id}", {
+        # ENHANCED: Log permission check details with full context
+        _log("info", f"🔍 PERMISSION CHECK DEBUG - File: {file_id}", {
             "file_id": file_id,
             "owner_id": owner_id,
             "current_user": current_user,
             "is_anonymous": current_user == "anonymous_user",
+            "user_match": str(owner_id) == str(current_user),
             "chat_id": chat_id,
-            "shared_with_count": len(shared_with or [])
+            "shared_with": shared_with,
+            "shared_with_count": len(shared_with or []),
+            "auth_header": request.headers.get("Authorization", "missing")[:50] if request.headers.get("Authorization") else "missing",
+            "user_agent": request.headers.get("user-agent", "unknown")[:100],
         })
 
         # ENHANCED: Handle anonymous user with better error message
         if current_user == "anonymous_user":
-            _log("warning", f"Anonymous user access denied for file: {file_id}", {
+            _log("warning", f"🚨 AUTHENTICATION FAILED: Anonymous user access denied for file: {file_id}", {
                 "file_id": file_id,
                 "owner_id": owner_id,
-                "reason": "Authentication required for file download"
+                "reason": "Authentication required for file download",
+                "auth_header": request.headers.get("Authorization", "missing")[:50] if request.headers.get("Authorization") else "missing",
+                "query_params": dict(request.query_params),
+                "cookies": dict(request.cookies),
             })
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
