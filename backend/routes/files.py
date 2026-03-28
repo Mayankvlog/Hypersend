@@ -7546,20 +7546,23 @@ async def download_file(
                 })
                 _log("info", f"🔗 MongoDB ↔ S3 mapping verified: file_id={file_id} → s3_key={s3_key}")
                 
-                # Return response with download URL
-                return {
-                    "status": "success",
-                    "status_code": 200,
-                    "detail": "File access granted",
-                    "data": {
-                        "file_id": file_id,
-                        "download_url": download_url,
-                        "expires_in": 300,  # 5 minutes
-                        "file_name": file_doc.get("filename", "unknown"),
-                        "file_size": file_doc.get("file_size", 0),
-                        "mime_type": file_doc.get("mime_type", "application/octet-stream"),
-                    }
-                }
+                # Return StreamingResponse directly to fix dio-boundary issue
+                # This prevents Flutter from trying to parse JSON as image data
+                try:
+                    s3_obj = s3_client.get_object(Bucket=bucket, Key=s3_key)
+                    
+                    from fastapi.responses import StreamingResponse
+                    return StreamingResponse(
+                        s3_obj["Body"],
+                        media_type=file_doc.get("mime_type", "image/jpeg"),
+                        headers={
+                            "Content-Disposition": f'inline; filename="{file_doc.get("filename", "file")}"',
+                            "Cache-Control": "public, max-age=3600"  # Cache for 1 hour
+                        }
+                    )
+                except Exception as e:
+                    _log("error", f"S3 streaming failed for {s3_key}: {e}")
+                    raise HTTPException(500, f"Download failed: {str(e)}")
             else:
                 # S3 not configured - return 503
                 _log(
@@ -9110,7 +9113,8 @@ async def download_file(file_id: str, token_data: dict = Depends(verify_jwt_toke
     """Download file with StreamingResponse - returns actual file content"""
 
     from bson import ObjectId
-    from fastapi.responses import StreamingResponse
+    from fastapi.responses import StreamingResponse, Response
+    from fastapi import HTTPException
     import boto3
 
     print(f"🔍 DEBUG: Downloading file_id: {file_id}")
