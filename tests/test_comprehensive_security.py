@@ -198,6 +198,7 @@ class TestRateLimitingRaceConditions:
         # Enable rate limiting for this test
         import os
         os.environ["RATE_LIMIT_ENABLED"] = "true"
+        os.environ["RATE_LIMIT_TEST_MODE"] = "true"
         
         limiter = RateLimiter(max_requests=3, window_seconds=1)
 

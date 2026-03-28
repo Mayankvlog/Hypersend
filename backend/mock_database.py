@@ -11,14 +11,19 @@ import uuid
 
 class MockDatabase:
     """Mock database for testing"""
-    def __init__(self):
+    def __init__(self, name="test"):
         self.collections = {}
+        self.name = name  # Add name attribute for compatibility
     
     def __getattr__(self, name):
         """Create collections on demand"""
         if name not in self.collections:
             self.collections[name] = MockCollection(name)
         return self.collections[name]
+    
+    def __getitem__(self, name):
+        """Make database subscriptable"""
+        return self.__getattr__(name)
 
 class MockCollection:
     """Mock collection for testing"""
@@ -240,6 +245,22 @@ class MockCollection:
                 count += 1
         return count
     
+    def clear(self):
+        """Clear all data from the collection"""
+        self.data.clear()
+        self._id_counter = 1
+    
+    def insert_many(self, documents: List[Dict]) -> MagicMock:
+        """Insert multiple documents"""
+        inserted_ids = []
+        for document in documents:
+            result = asyncio.run(self.insert_one(document))
+            inserted_ids.append(result.inserted_id)
+        
+        result = MagicMock()
+        result.inserted_ids = inserted_ids
+        return result
+    
     def _match_query(self, doc: Dict, query: Dict) -> bool:
         """Enhanced query matching for ObjectId and string queries"""
         if not query:
@@ -322,3 +343,50 @@ async def close_db():
 def get_db():
     """Mock database getter"""
     return MockDatabase()
+
+# Singleton instance for mock database
+_mock_db_instance = None
+
+def get_mock_db():
+    """Get mock database instance (singleton)"""
+    global _mock_db_instance
+    if _mock_db_instance is None:
+        _mock_db_instance = MockDatabase()
+    return _mock_db_instance
+
+class MockMongoClient:
+    """Mock MongoDB client for testing"""
+    def __init__(self, uri=None, **kwargs):
+        self.uri = uri
+        self._db = MockDatabase()
+        self.databases = {}  # Add databases attribute for compatibility
+    
+    def __getitem__(self, name):
+        return self._db[name]
+    
+    def get_database(self, name=None):
+        return self._db
+    
+    async def close(self):
+        """Mock close method"""
+        pass
+
+def clear_test_collections():
+    """Clear all test collections"""
+    global _users_collection, _chats_collection, _messages_collection
+    global _files_collection, _uploads_collection, _refresh_tokens_collection, _reset_tokens_collection
+    
+    if _users_collection:
+        _users_collection.clear()
+    if _chats_collection:
+        _chats_collection.clear()
+    if _messages_collection:
+        _messages_collection.clear()
+    if _files_collection:
+        _files_collection.clear()
+    if _uploads_collection:
+        _uploads_collection.clear()
+    if _refresh_tokens_collection:
+        _refresh_tokens_collection.clear()
+    if _reset_tokens_collection:
+        _reset_tokens_collection.clear()

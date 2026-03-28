@@ -60,17 +60,19 @@ class TestMemberSuggestionsFix:
     def setup_method(self):
         """Clean up mock database before each test"""
         try:
-            from mock_database import MockCollection
-            from mock_database import users_collection, chats_collection
+            from backend.mock_database import MockCollection, clear_test_collections
+            from backend.mock_database import users_collection, chats_collection
             
-            # Clear mock database data
+            # Clear mock database data using the new clear_test_collections function
             try:
-                from mock_database import clear_test_collections
                 clear_test_collections()
-            except ImportError:
+            except Exception as e:
                 # Fallback - clear collections directly
-                users_collection().clear()
-                chats_collection().clear()
+                try:
+                    users_collection().clear()
+                    chats_collection().clear()
+                except Exception as e2:
+                    pass  # Mock database not available or clear failed
         except ImportError:
             pass  # Mock database not available
     
@@ -90,17 +92,19 @@ class TestMemberSuggestionsFix:
         
         # Clean up mock database
         try:
-            from mock_database import MockCollection
-            from mock_database import users_collection, chats_collection
+            from backend.mock_database import MockCollection, clear_test_collections
+            from backend.mock_database import users_collection, chats_collection
             
-            # Clear mock database data
+            # Clear mock database data using the new clear_test_collections function
             try:
-                from mock_database import clear_test_collections
                 clear_test_collections()
-            except ImportError:
+            except Exception as e:
                 # Fallback - clear collections directly
-                users_collection().clear()
-                chats_collection().clear()
+                try:
+                    users_collection().clear()
+                    chats_collection().clear()
+                except Exception as e2:
+                    pass  # Mock database not available or clear failed
         except ImportError:
             pass  # Mock database not available
     
@@ -144,10 +148,10 @@ class TestMemberSuggestionsFix:
                 
                 # Clear collections
                 try:
-                    from mock_database import clear_test_collections
+                    from backend.mock_database import clear_test_collections
                     clear_test_collections()
-                except (ImportError, AttributeError):
-                    pass  # Mock database not available
+                except (ImportError, AttributeError, Exception):
+                    pass  # Mock database not available or clear failed
                 
                 mock_users_instance = AsyncMock()
                 mock_users_instance.insert_one = AsyncMock()
@@ -220,10 +224,10 @@ class TestMemberSuggestionsFix:
                 
                 # Clear collections
                 try:
-                    from mock_database import clear_test_collections
+                    from backend.mock_database import clear_test_collections
                     clear_test_collections()
-                except (ImportError, AttributeError):
-                    pass
+                except (ImportError, AttributeError, Exception):
+                    pass  # Mock database not available or clear failed
                 
                 mock_users_instance = AsyncMock()
                 mock_users_collection.return_value = mock_users_instance

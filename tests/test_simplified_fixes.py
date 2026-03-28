@@ -188,7 +188,7 @@ class TestDatabaseClientConfiguration:
             # Mock settings AND environment
             with patch("database.settings") as mock_settings:
                 mock_settings.MONGODB_URI = (
-                    "mongodb://test:test@mongodb:27017/test?authSource=admin&tls=false"
+                    "mongodb+srv://test:test@cluster.mongodb.net/test?authSource=admin&tls=true"
                 )
                 mock_settings._MONGO_DB = "test_db"
                 mock_settings.USE_MOCK_DB = (
@@ -289,7 +289,7 @@ class TestErrorHandling:
 
             # Mock settings
             with patch("database.settings") as mock_settings:
-                mock_settings.MONGODB_URI = "mongodb://test:test@localhost:27017/test"
+                mock_settings.MONGODB_URI = "mongodb+srv://test:test@cluster.mongodb.net/test"
                 mock_settings._MONGO_DB = "test_db"
                 mock_settings.USE_MOCK_DB = False  # Ensure real database testing
 

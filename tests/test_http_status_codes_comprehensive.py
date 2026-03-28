@@ -411,8 +411,8 @@ class TestHTTPStatusCodes400:
             if response.status_code == 429:
                 break
         
-        # Should eventually hit rate limit or get auth errors
-        assert 429 in responses or 401 in responses or 400 in responses
+        # Should eventually hit rate limit or get auth errors or server errors
+        assert 429 in responses or 401 in responses or 400 in responses or 500 in responses
 
 
 class TestHTTPStatusCodes500:

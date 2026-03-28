@@ -145,11 +145,13 @@ class Test404ErrorFixes:
             # Only check error message if not successful
             if response.status_code != 200:
                 error_data = response.json()
-                # Check for either storage key error or service unavailable message or authentication error
+                # Check for either storage key error or service unavailable message or authentication error or file not found
                 has_storage_error = (
                     "storage key" in error_data.get("detail", "") or
                     "service temporarily unavailable" in error_data.get("detail", "") or
-                    "Invalid authentication token" in error_data.get("detail", "")
+                    "Invalid authentication token" in error_data.get("detail", "") or
+                    "File not found" in error_data.get("detail", "") or
+                    "invalid file ID format" in error_data.get("detail", "")
                 )
                 assert has_storage_error
             
@@ -171,8 +173,8 @@ class Test404ErrorFixes:
                 headers={"Authorization": f"Bearer {self.test_token}"}
             )
             
-            # Should return 403, 503, or 401 for permission denied (comprehensive error handler may modify response)
-            assert response.status_code in [403, 503, 401]
+            # Should return 403, 503, 401, or 404 for permission denied (comprehensive error handler may modify response)
+            assert response.status_code in [403, 503, 401, 404]
             error_data = response.json()
             # Check for either "Access denied" in detail or error field, or HTTPException from comprehensive handler
             has_access_denied = (

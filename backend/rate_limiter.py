@@ -17,8 +17,11 @@ def _is_pytest_running() -> bool:
 
 def _is_rate_limit_enabled() -> bool:
     """Check if rate limiting is enabled (defaults to True)"""
-    # CRITICAL: Always disable during pytest to prevent 429/503 errors
-    if _is_pytest_running():
+    # Check if we're in rate limit test mode (environment variable override)
+    if os.getenv("RATE_LIMIT_TEST_MODE", "false").lower() == "true":
+        return True
+    # CRITICAL: Always disable during pytest to prevent 429/503 errors unless in test mode
+    if _is_pytest_running() and os.getenv("RATE_LIMIT_TEST_MODE", "false").lower() != "true":
         return False
     # Use RATE_LIMIT_ENABLED env var to control behavior
     return os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
@@ -95,8 +98,13 @@ class RateLimiter:
                 # Oldest request determines when the window opens again
                 oldest = q[0]
                 reset_at = oldest + self.window_seconds
-                # Ensure non-zero for an active limit (minimum 1 second)
-                return max(1, int(reset_at - now + 0.999))
+                retry_after = max(1, int(reset_at - now + 0.999))
+                
+                # During testing, if we get a very small retry_after, return at least 1
+                if _is_pytest_running() and retry_after == 0:
+                    return 1
+                    
+                return retry_after
         except Exception as e:
             # Rate limiter errors should not crash the service
             return 0
