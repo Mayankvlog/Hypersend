@@ -7439,10 +7439,10 @@ async def download_file(
         
         file_oid = ObjectId(file_id)
         
-        # Query files collection by _id
+        # Query uploads collection by _id - FIXED: was using files_collection
         try:
             file_doc = await asyncio.wait_for(
-                files_collection().find_one({"_id": file_oid}),
+                uploads_collection().find_one({"_id": file_oid}),
                 timeout=30.0,
             )
         except asyncio.TimeoutError:
@@ -7860,7 +7860,7 @@ async def acknowledge_file_delivery(
 
     file_oid = ObjectId(file_id)
 
-    file_doc = await files_collection().find_one({"_id": file_oid})
+    file_doc = await uploads_collection().find_one({"_id": file_oid})
 
 
 
@@ -9124,7 +9124,7 @@ async def download_file(file_id: str, token_data: dict = Depends(verify_jwt_toke
         raise HTTPException(404, "File not found")
 
     file_oid = ObjectId(file_id)
-    file_doc = await files_collection().find_one({"_id": file_oid})
+    file_doc = await uploads_collection().find_one({"_id": file_oid})
 
     print(f"🔍 DEBUG: Mongo result: {file_doc}")
     
@@ -9190,7 +9190,7 @@ async def get_presigned_download_url(file_id: str, token_data: dict = Depends(ve
         raise HTTPException(404, "File not found")
 
     file_oid = ObjectId(file_id)
-    file_doc = await files_collection().find_one({"_id": file_oid})
+    file_doc = await uploads_collection().find_one({"_id": file_oid})
 
     if not file_doc:
         raise HTTPException(404, "File not found")
@@ -9297,7 +9297,7 @@ async def stream_media(
 
 
 
-        file_doc = await files_collection().find_one({"_id": file_oid})
+        file_doc = await uploads_collection().find_one({"_id": file_oid})
 
 
 
@@ -9727,7 +9727,7 @@ async def get_media_by_id_main(
 
 
 
-                files_collection().find_one({"_id": ObjectId(file_id)}),
+                uploads_collection().find_one({"_id": ObjectId(file_id)}),
 
 
 
@@ -15391,13 +15391,13 @@ async def get_shared_users(file_id: str, current_user: str = Depends(get_current
 
 
 
-        # Query files collection by _id
+        # Query uploads collection by _id - FIXED: was using files_collection
 
         try:
 
             file_doc = await asyncio.wait_for(
 
-                files_collection().find_one({"_id": file_oid}),
+                uploads_collection().find_one({"_id": file_oid}),
 
                 timeout=30.0,
 
@@ -15603,7 +15603,7 @@ async def revoke_file_access(
 
         file_doc = await asyncio.wait_for(
 
-            files_collection().find_one({"_id": file_oid}), timeout=30.0
+            uploads_collection().find_one({"_id": file_oid}), timeout=30.0
 
         )
 
@@ -24263,7 +24263,7 @@ async def save_to_public_directory(
 
         file_doc = await asyncio.wait_for(
 
-            files_collection().find_one({"_id": file_oid}), timeout=30.0
+            uploads_collection().find_one({"_id": file_oid}), timeout=30.0
 
         )
 
@@ -27365,7 +27365,7 @@ class MediaLifecycleService:
 
 
 
-            upload_record = await files_collection().find_one({"_id": media_id})
+            upload_record = await uploads_collection().find_one({"_id": media_id})
 
 
 
@@ -27697,7 +27697,7 @@ class MediaLifecycleService:
 
 
 
-            upload_record = await files_collection().find_one({"_id": token})
+            upload_record = await uploads_collection().find_one({"_id": token})
 
 
 
