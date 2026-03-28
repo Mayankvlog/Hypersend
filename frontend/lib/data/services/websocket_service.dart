@@ -5,7 +5,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../services/service_provider.dart';
 
 /// WebSocket service for real-time chat messaging
-/// Connects to production domain with JWT token authentication
+/// Connects to production domain with cookie-based authentication
 class WebSocketService {
   WebSocketChannel? _channel;
   StreamSubscription? _subscription;
@@ -21,7 +21,7 @@ class WebSocketService {
   /// Connect to WebSocket for a specific chat
   /// 
   /// [chatId] - The chat ID to connect to
-  /// Throws Exception if token is missing or connection fails
+  /// Uses cookie-based authentication (no tokens)
   Future<void> connect(String chatId) async {
     try {
       debugPrint('[WS_SERVICE] Starting WebSocket connection for chat: $chatId');
@@ -31,26 +31,15 @@ class WebSocketService {
         await disconnect();
       }
       
-      // Get JWT token from auth service
-      debugPrint('[WS_SERVICE] 🔍 Getting access token for WebSocket...');
-      final token = await serviceProvider.authService.getAccessToken();
+      // Cookie-based authentication - NO token logic
+      debugPrint('[WS_SERVICE] 🔌 Connecting WS (cookies based)');
       
-      debugPrint('[WS_SERVICE] 🎫 TOKEN: $token');
+      // Use production domain with cookie-based auth
+      final url = "wss://zaply.in.net/api/v1/ws/chat/$chatId";
       
-      if (token == null || token.isEmpty) {
-        debugPrint('[WS_SERVICE] ❌ No access token available for WebSocket connection');
-        throw Exception("Token missing - please login first");
-      }
+      debugPrint('[WS_SERVICE] 🔌 Connecting WS (cookies based): $url');
       
-      // Encode token for URL (industry standard approach)
-      final encodedToken = Uri.encodeComponent(token);
-      
-      // Use production domain as specified - NEVER localhost
-      final url = "wss://zaply.in.net/api/v1/ws/chat/$chatId?token=$encodedToken";
-      
-      debugPrint('[WS_SERVICE] ✅ WS CONNECTING: $url');
-      
-      // Create WebSocket connection
+      // Create WebSocket connection (cookies will be sent automatically)
       _channel = WebSocketChannel.connect(Uri.parse(url));
       _currentChatId = chatId;
       

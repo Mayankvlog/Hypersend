@@ -3397,17 +3397,17 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
     WebSocket endpoint for real-time chat messaging.
     
     PRODUCTION CRITICAL FIXES:
-    1) Token-based authentication via query parameters (industry standard)
+    1) Cookie-based authentication (HTTPOnly cookies)
     2) Per-device connection tracking (prevents duplicate message delivery)
     3) UTC timestamp preservation (timestamps stored in DB before broadcast)
     4) Redis pub/sub integration (room-based message fan-out)
     5) Async non-blocking operations (doesn't block on slow clients)
     6) Proper reconnection handling (replaces stale connections)
     
-    IMPORTANT: Accept WebSocket BEFORE reading query params (FastAPI requirement)
+    IMPORTANT: Accept WebSocket BEFORE reading cookies (FastAPI requirement)
     
-    Authentication: ?token=JWT_TOKEN (URL encoded)
-    Connection URL: wss://zaply.in.net/api/v1/ws/chat/{chat_id}?token=JWT_TOKEN
+    Authentication: HTTPOnly cookies (access_token cookie)
+    Connection URL: wss://zaply.in.net/api/v1/ws/chat/{chat_id}
     
     Message format:
     {
@@ -3426,32 +3426,33 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
     pubsub = None
     
     try:
-        # IMPORTANT: Accept BEFORE reading query params (FastAPI requirement)
+        # IMPORTANT: Accept BEFORE reading cookies (FastAPI requirement)
         await websocket.accept()
         
-        # Get token from query parameters (industry standard approach)
-        token = websocket.query_params.get("token")
+        # Get access token cookie for authentication
+        cookies = websocket.cookies
+        access_token = cookies.get("access_token")
         
         logger.info(f"[WEBSOCKET] New connection request for chat {chat_id}")
-        logger.info(f"[WEBSOCKET] Token present: {token is not None}")
+        logger.info(f"[WEBSOCKET] Access token cookie present: {access_token is not None}")
         
-        if not token:
-            logger.error(" No token in WS query parameters")
-            await websocket.close(code=1008, reason="No token provided")
+        if not access_token:
+            logger.error("[WEBSOCKET] No access token cookie")
+            await websocket.close(code=1008, reason="No access token cookie")
             return
         
-        logger.debug(f"[WEBSOCKET] Token found: {token[:20]}...")
+        logger.debug(f"[WEBSOCKET] Access token found: {access_token[:20]}...")
         
-        # Verify JWT token
+        # Verify user from access token
         try:
             from auth.utils import decode_token
-            token_data = decode_token(token)
+            token_data = decode_token(access_token)
             user_id = token_data.user_id
-            device_id = token_data.get("device_id") or "primary"
+            device_id = "primary"  # Default device ID for cookie-based auth
             logger.info(f"[WEBSOCKET] WS CONNECTED user={user_id} device={device_id} chat={chat_id}")
         except Exception as e:
-            logger.error(f"[WEBSOCKET] Invalid token: {e}")
-            await websocket.close(code=1008, reason="Invalid token")
+            logger.error(f"[WEBSOCKET] Invalid access token: {e}")
+            await websocket.close(code=1008, reason="Invalid access token")
             return
         
         # Verify user is member of chat
