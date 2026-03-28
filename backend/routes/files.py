@@ -8519,8 +8519,7 @@ async def process_media_ack(
 async def download_file_sync(file_id: str):
     """
     Download file by file_id.
-    Handles both ObjectId and string _id types in MongoDB.
-    Returns a presigned S3 URL for actual download.
+    Streams the actual file content instead of returning JSON.
     """
     # 1️⃣ Convert to ObjectId if possible
     try:
@@ -8541,27 +8540,42 @@ async def download_file_sync(file_id: str):
         print(f"❌ S3 key missing in MongoDB record: {file_id}")
         raise HTTPException(status_code=404, detail="File not found in S3")
 
-    # 3️⃣ Generate presigned S3 URL
+    # 3️⃣ Stream file directly from S3
     try:
         s3_client = _get_s3_client()
         if not s3_client:
             raise HTTPException(503, "S3 service not available")
             
-        presigned_url = s3_client.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": getattr(settings, 'S3_BUCKET', 'zaply-object-storage-781953767677-us-east-1-an'), "Key": s3_key},
-            ExpiresIn=300  # 5 minutes
+        # Get file info for proper content type
+        file_obj = s3_client.get_object(
+            Bucket=getattr(settings, 'S3_BUCKET', 'zaply-object-storage-781953767677-us-east-1-an'), 
+            Key=s3_key
         )
-        # Return JSON response with presigned URL instead of redirect for Flutter Web compatibility
-        return {
-            "success": True,
-            "download_url": presigned_url,
-            "expires_in": 300,
-            "file_id": file_id
+        
+        # Get content type from file record or S3 object
+        content_type = file_record.get("mime_type") or file_obj.get('ContentType', 'application/octet-stream')
+        filename = file_record.get("filename", f"file_{file_id}")
+        
+        # Stream the file content directly
+        from fastapi.responses import StreamingResponse
+        
+        def iterfile():
+            yield file_obj['Body'].read(1024 * 1024)  # 1MB chunks
+        
+        headers = {
+            'Content-Disposition': f'attachment; filename="{filename}"',
+            'Cache-Control': 'no-cache'
         }
+        
+        return StreamingResponse(
+            iterfile(), 
+            media_type=content_type,
+            headers=headers
+        )
+        
     except ClientError as e:
         print(f"❌ S3 download error: {e}")
-        raise HTTPException(status_code=500, detail="Error generating download link")
+        raise HTTPException(status_code=500, detail="Error downloading file")
 
 
 @router.get("/{file_id}/download-url")

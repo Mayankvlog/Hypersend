@@ -346,9 +346,11 @@ class TestFileDownloadAuthentication:
         sig = inspect.signature(download_file)
         params = list(sig.parameters.keys())
 
-        # Should have file_id and token_data parameters (request may have been removed)
+        # Should have file_id, request, device_id, and current_user parameters
         assert "file_id" in params
-        assert "token_data" in params  # This is the current parameter
+        assert "request" in params
+        assert "device_id" in params
+        assert "current_user" in params
         # Request parameter may not be present anymore - that's acceptable
 
     def test_token_decode_error_handling(self):
