@@ -1,0 +1,16 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::<YOUR_ACCOUNT_ID>:role/<YOUR_APP_ROLE>"
+      },
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::zaply-object-storage-781953767677-us-east-1-an",
+        "arn:aws:s3:::zaply-object-storage-781953767677-us-east-1-an/*"
+      ]
+    }
+  ]
+}
