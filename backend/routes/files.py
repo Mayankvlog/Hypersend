@@ -9129,9 +9129,6 @@ async def process_media_ack(
 
 
 @router.get("/download/{file_id}")
-
-
-
 async def download_file(file_id: str, token_data: dict = Depends(verify_jwt_token)):
     """Download file with StreamingResponse - returns actual file content"""
 
@@ -9183,6 +9180,55 @@ async def download_file(file_id: str, token_data: dict = Depends(verify_jwt_toke
     except Exception as e:
         _log("error", f"S3 download failed for {s3_key}: {e}")
         raise HTTPException(500, f"Download failed: {str(e)}")
+
+
+@router.get("/{file_id}/download-url")
+async def get_presigned_download_url(file_id: str, token_data: dict = Depends(verify_jwt_token)):
+    """Get S3 presigned URL for file download - no streaming, just URL"""
+    
+    from bson import ObjectId
+    import boto3
+
+    if not ObjectId.is_valid(file_id):
+        raise HTTPException(404, "File not found")
+
+    file_oid = ObjectId(file_id)
+    file_doc = await files_collection().find_one({"_id": file_oid})
+
+    if not file_doc:
+        raise HTTPException(404, "File not found")
+
+    # CRITICAL: Check file status and S3 upload status
+    if file_doc.get("status") != "completed":
+        raise HTTPException(404, "Upload not finished")
+
+    if not file_doc.get("s3_uploaded"):
+        raise HTTPException(404, "S3 not ready")
+
+    s3_key = file_doc.get("s3_key")
+    if not s3_key:
+        raise HTTPException(404, "File S3 key not found")
+
+    bucket = file_doc.get("bucket", getattr(settings, 'S3_BUCKET', 'zaply-object-storage-781953767677-us-east-1-an'))
+
+    try:
+        # Get S3 client
+        s3_client = _get_s3_client()
+        if not s3_client:
+            raise HTTPException(503, "S3 service not available")
+
+        # Generate presigned URL
+        url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': bucket, 'Key': s3_key},
+            ExpiresIn=3600  # 1 hour expiry
+        )
+
+        return {"download_url": url}
+
+    except Exception as e:
+        _log("error", f"Failed to generate presigned URL for {s3_key}: {e}")
+        raise HTTPException(500, f"Failed to generate download URL: {str(e)}")
 
 
 

@@ -2266,6 +2266,25 @@ Future<void> postToChannel(String channelId, String text) async {
     return response.data;
   }
 
+  // Get S3 presigned URL for file download
+  Future<String?> getPresignedDownloadUrl(String fileId) async {
+    try {
+      final response = await _makeAuthenticatedRequest(
+        method: 'GET',
+        path: '${ApiConstants.filesEndpoint}/$fileId/download-url',
+      );
+      
+      if (response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+        return data['download_url'] as String?;
+      }
+      return null;
+    } catch (e) {
+      _log('[PRESIGNED_URL_ERROR] Failed to get presigned URL: $e');
+      return null;
+    }
+  }
+
   Future<void> downloadFileToPath({
     required String fileId,
     required String savePath,

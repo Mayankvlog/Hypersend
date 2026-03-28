@@ -1280,8 +1280,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   Future<void> _showImageOptions(Message message, String fileId, String fileName, String contentType) async {
     if (!mounted) return;
     
-    final imageUrl = '${ApiConstants.baseUrl}/media/$fileId?download=true';
-    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1298,7 +1296,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: _buildAuthenticatedImagePreview(imageUrl, fileName),
+                child: _buildPresignedImagePreview(fileId, fileName),
               ),
             ),
             const SizedBox(height: 16),
@@ -1327,12 +1325,100 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                _openImageExternally(imageUrl, fileName);
+                _openImageExternally(fileId, fileName);
               },
               child: const Text('Open in Viewer'),
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPresignedImagePreview(String fileId, String fileName) {
+    return FutureBuilder<String?>(
+      future: serviceProvider.apiService.getPresignedDownloadUrl(fileId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            width: 250,
+            height: 180,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                strokeWidth: 2,
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.hasError || !snapshot.hasData || snapshot.data == null) {
+          debugPrint('[IMAGE_PREVIEW] Error getting presigned URL: ${snapshot.error}');
+          return Container(
+            width: 250,
+            height: 180,
+            decoration: BoxDecoration(
+              color: Colors.red.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.broken_image, color: Colors.red, size: 32),
+                SizedBox(height: 8),
+                Text('Preview not available'),
+              ],
+            ),
+          );
+        }
+
+        final presignedUrl = snapshot.data!;
+        return Image.network(
+          presignedUrl,
+          width: 250,
+          height: 180,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            debugPrint('[IMAGE_PREVIEW] Error loading image from presigned URL: $error');
+            return Container(
+              width: 250,
+              height: 180,
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.broken_image, color: Colors.red, size: 32),
+                  SizedBox(height: 8),
+                  Text('Preview not available'),
+                ],
+              ),
+            );
+          },
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              width: 250,
+              height: 180,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                  strokeWidth: 2,
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
