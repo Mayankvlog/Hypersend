@@ -3834,20 +3834,10 @@ class WebSocketConnection {
     }
     
     try {
-      // Get JWT token from auth service
-      final authService = serviceProvider.authService;
-      final accessToken = authService.accessToken;
-      
-      if (accessToken == null || accessToken.isEmpty) {
-        logger('[WEBSOCKET] No access token available for $chatId');
-        onError('No access token available');
-        return;
-      }
-      
-      // Include JWT token in query parameter for backend authentication
-      // URL-encode token to ensure proper handling of special characters
-      final encodedToken = Uri.encodeComponent(accessToken);
-      final wsUrl = 'ws://zaply.in.net/ws/chat/$chatId?token=$encodedToken';
+      // ✅ FINAL FIX (NO localhost, ONLY DOMAIN)
+      // HTTPOnly cookies are sent automatically by browser
+      // No token needed in query parameters
+      final wsUrl = 'wss://zaply.in.net/ws/chat/$chatId';
       
       logger('[WEBSOCKET] Connecting to $wsUrl for chat $chatId...');
       

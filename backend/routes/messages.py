@@ -3392,20 +3392,19 @@ manager = ChatConnectionManager()
 
 
 @router.websocket("/ws/chat/{chat_id}")
-async def websocket_endpoint(websocket: WebSocket, chat_id: str, token: str = None):
+async def websocket_endpoint(websocket: WebSocket, chat_id: str):
     """
     WebSocket endpoint for real-time chat messaging.
     
     PRODUCTION CRITICAL FIXES:
-    1) Per-device connection tracking (prevents duplicate message delivery)
-    2) UTC timestamp preservation (timestamps stored in DB before broadcast)
-    3) Redis pub/sub integration (room-based message fan-out)
-    4) Async non-blocking operations (doesn't block on slow clients)
-    5) Proper reconnection handling (replaces stale connections)
+    1) HTTPOnly cookie authentication (no tokens in query params)
+    2) Per-device connection tracking (prevents duplicate message delivery)
+    3) UTC timestamp preservation (timestamps stored in DB before broadcast)
+    4) Redis pub/sub integration (room-based message fan-out)
+    5) Async non-blocking operations (doesn't block on slow clients)
+    6) Proper reconnection handling (replaces stale connections)
     
-    Query parameters:
-    - token: JWT authentication token (REQUIRED)
-    - device_id: Optional device identifier (defaults to "primary")
+    IMPORTANT: Accept WebSocket BEFORE reading cookies (FastAPI requirement)
     
     Message format:
     {
@@ -3424,40 +3423,34 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, token: str = No
     pubsub = None
     
     try:
-        # ENHANCED: Extract token from query parameters with comprehensive logging
+        # IMPORTANT: Accept BEFORE reading cookies (FastAPI requirement)
+        await websocket.accept()
+        
+        # HTTPOnly cookies read karo
+        cookies = websocket.cookies
         logger.info(f"[WEBSOCKET] New connection request for chat {chat_id}")
+        logger.info(f"[WEBSOCKET] Available cookies: {list(cookies.keys())}")
         
-        # Redact sensitive query parameters before logging
-        sensitive_keys = ["token", "access_token", "auth", "jwt", "password", "secret"]
-        redacted_params = {}
-        for key, value in websocket.query_params.items():
-            if any(sensitive in key.lower() for sensitive in sensitive_keys):
-                redacted_params[key] = "<REDACTED>"
-            else:
-                redacted_params[key] = value
+        # Cookie name check karo - use exact names from auth.py
+        session_cookie = cookies.get("access_token")  # Primary cookie name from login
         
-        if redacted_params:
-            logger.debug(f"[WEBSOCKET] Query params: {redacted_params}")
-        else:
-            logger.debug(f"[WEBSOCKET] No query parameters provided")
-        
-        if not token:
-            logger.error(f"[WEBSOCKET] No token provided in query params for chat {chat_id}")
-            await websocket.close(code=4001, reason="Token required")
+        if not session_cookie:
+            logger.error("No access_token cookie found")
+            await websocket.close(code=1008, reason="No access_token cookie")
             return
         
-        logger.debug(f"[WEBSOCKET] Token provided for chat {chat_id}: <REDACTED>")
+        logger.debug(f"[WEBSOCKET] Access token cookie found: {session_cookie[:20]}...")
         
-        # Decode JWT token
+        # tumhara existing auth logic use karo
         try:
             from auth.utils import decode_token
-            token_data = decode_token(token)
+            token_data = decode_token(session_cookie)
             user_id = token_data.user_id
             device_id = token_data.get("device_id") or "primary"
-            logger.info(f"[WEBSOCKET] User {user_id}, Device {device_id} authenticated for WebSocket")
+            logger.info(f"[WEBSOCKET] WebSocket authenticated user: {user_id}, device: {device_id}")
         except Exception as e:
-            logger.error(f"[WEBSOCKET] Token validation failed: {e}")
-            await websocket.close(code=4003, reason="Invalid token")
+            logger.error(f"[WEBSOCKET] Invalid session: {e}")
+            await websocket.close(code=1008, reason="Invalid session")
             return
         
         # Verify user is member of chat
