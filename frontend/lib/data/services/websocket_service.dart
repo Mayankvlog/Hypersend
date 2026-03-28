@@ -31,8 +31,11 @@ class WebSocketService {
         await disconnect();
       }
       
-      // Get JWT access token from auth service
+      // Get JWT token from auth service
+      debugPrint('[WS_SERVICE] 🔍 Getting access token for WebSocket...');
       final token = await serviceProvider.authService.getAccessToken();
+      
+      debugPrint('[WS_SERVICE] 🎫 TOKEN: $token');
       
       if (token == null || token.isEmpty) {
         debugPrint('[WS_SERVICE] ❌ No access token available for WebSocket connection');

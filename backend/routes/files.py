@@ -5972,50 +5972,27 @@ async def complete_upload(
 
         file_id = ObjectId()
 
-        
-
         try:
-
             file_document = {
-
                 "_id": file_id,
-
                 "upload_id": upload_id,
-
                 "s3_key": s3_key,
-
                 "object_key": s3_key,  # For compatibility with existing download logic
-
                 "user_id": current_user,
-
                 "owner_id": current_user,  # CRITICAL: Set owner_id for permission checks
-
                 "chat_id": upload_record.get("chat_id"),  # CRITICAL: Set chat_id for permission checks
-
                 "created_at": datetime.now(timezone.utc),
-
                 "status": "completed",
-
                 "file_url": file_url,
-
                 "filename": upload_record.get("filename", f"file_{upload_id}"),
-
                 "mime_type": upload_record.get("mime_type", "application/octet-stream"),
-
                 "file_size": upload_record.get("file_size", 0),
-
+                "s3_uploaded": True,  # CRITICAL: Add this field for download endpoint
                 "s3_verified": True,
-
                 "verification_timestamp": datetime.now(timezone.utc),
-
                 "completed_at": datetime.now(timezone.utc)
-
             }
-
             
-
-            # Insert into files collection
-
             insert_result = await files_collection().insert_one(file_document)
 
             
@@ -9136,24 +9113,40 @@ async def download_file(file_id: str, token_data: dict = Depends(verify_jwt_toke
     from fastapi.responses import StreamingResponse
     import boto3
 
+    print(f"🔍 DEBUG: Downloading file_id: {file_id}")
+    
     if not ObjectId.is_valid(file_id):
+        print(f"❌ DEBUG: Invalid file_id format")
         raise HTTPException(404, "File not found")
 
     file_oid = ObjectId(file_id)
     file_doc = await files_collection().find_one({"_id": file_oid})
 
+    print(f"🔍 DEBUG: Mongo result: {file_doc}")
+    
     if not file_doc:
+        print(f"❌ DEBUG: File not found in MongoDB")
         raise HTTPException(404, "File not found")
 
     # CRITICAL: Check file status and S3 upload status
-    if file_doc.get("status") != "completed":
+    status = file_doc.get("status")
+    s3_uploaded = file_doc.get("s3_uploaded")
+    s3_key = file_doc.get("s3_key")
+    
+    print(f"🔍 DEBUG: File status: {status}")
+    print(f"🔍 DEBUG: S3 uploaded: {s3_uploaded}")
+    print(f"🔍 DEBUG: S3 key: {s3_key}")
+    
+    if status != "completed":
+        print(f"❌ DEBUG: Upload not finished - status: {status}")
         raise HTTPException(404, "Upload not finished")
 
-    if not file_doc.get("s3_uploaded"):
+    if not s3_uploaded:
+        print(f"❌ DEBUG: S3 not ready - s3_uploaded: {s3_uploaded}")
         raise HTTPException(404, "S3 not ready")
 
-    s3_key = file_doc.get("s3_key")
     if not s3_key:
+        print(f"❌ DEBUG: File S3 key not found")
         raise HTTPException(404, "File S3 key not found")
 
     bucket = file_doc.get("bucket", getattr(settings, 'S3_BUCKET', 'zaply-object-storage-781953767677-us-east-1-an'))
