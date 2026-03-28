@@ -3847,7 +3847,7 @@ class WebSocketConnection {
       // Include JWT token in query parameter for backend authentication
       // URL-encode token to ensure proper handling of special characters
       final encodedToken = Uri.encodeComponent(accessToken);
-      final wsUrl = 'wss://zaply.in.net/ws/chat/$chatId?token=$encodedToken';
+      final wsUrl = 'ws://zaply.in.net/ws/chat/$chatId?token=$encodedToken';
       
       logger('[WEBSOCKET] Connecting to $wsUrl for chat $chatId...');
       

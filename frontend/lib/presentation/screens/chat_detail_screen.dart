@@ -960,6 +960,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       // Complete upload
       final completed = await serviceProvider.apiService.completeUpload(uploadId: uploadId);
       final remoteFileId = completed['file_id'];
+      
+      // DEBUG: Print both IDs to verify the fix
+      debugPrint('🔍 FILE ID DEBUG:');
+      debugPrint('UPLOAD ID: $uploadId');
+      debugPrint('FILE ID: $remoteFileId');
+      debugPrint('IDs are different: ${uploadId != remoteFileId}');
 
       // Send the attachment message
       if (!mounted) return;
