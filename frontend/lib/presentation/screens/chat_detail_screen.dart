@@ -19,6 +19,7 @@ import '../../core/theme/app_theme.dart';
 import '../../data/models/chat.dart';
 import '../../data/models/message.dart';
 import '../../data/services/service_provider.dart';
+import '../../data/services/websocket_service.dart';
 import '../widgets/message_bubble.dart';
 import '../../core/utils/time_formatter.dart';
 import '../../core/utils/emoji_utils.dart';
@@ -48,7 +49,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   late List<dynamic> _listItems;
   
   // CRITICAL: Persistent WebSocket connection (initialized once)
-  dynamic _wsConnection;
+  WebSocketService? _webSocketService;
   bool _wsConnected = false;
   
   // Camera functionality removed - only Photos/Videos option available
@@ -66,9 +67,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   void dispose() {
     _messageController.dispose();
     // Close WebSocket connection
-    if (_wsConnection != null) {
-      serviceProvider.apiService.closeChatConnection(widget.chatId);
-      _wsConnection = null;
+    if (_webSocketService != null) {
+      _webSocketService!.disconnect();
+      _webSocketService = null;
     }
     super.dispose();
   }
@@ -1071,33 +1072,25 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   /// Initialize persistent WebSocket connection for real-time message delivery
   /// CRITICAL: This runs ONCE per chat - no re-initialization on re-render
   Future<void> _initializeWebSocket() async {
-    if (_wsConnected || _wsConnection != null) {
+    if (_wsConnected || _webSocketService != null) {
       return; // Already initialized
     }
     
     try {
-      // Get or create persistent WebSocket connection (with automatic reconnection)
-      _wsConnection = serviceProvider.apiService.getOrCreateChatConnection(
-        chatId: widget.chatId,
-        userId: _meId,
-        deviceId: 'flutter_client_${_meId.hashCode}',
-        onMessage: _handleWebSocketMessage,
-        onError: _handleWebSocketError,
-      );
+      // Create WebSocket service instance
+      _webSocketService = WebSocketService();
       
-      // Start the WebSocket connection only if _wsConnection is non-null
-      if (_wsConnection != null) {
-        await _wsConnection!.connect();
-        _wsConnected = true;
-        debugPrint('[WEBSOCKET] Persistent WebSocket connection established for chat ${widget.chatId}');
-      } else {
-        _wsConnected = false;
-        debugPrint('[WEBSOCKET] Connection object is null for chat ${widget.chatId}');
-      }
+      // Connect to production domain with token authentication
+      await _webSocketService!.connect(widget.chatId);
+      _wsConnected = true;
+      
+      debugPrint('[WEBSOCKET] ✅ Persistent WebSocket connection established for chat ${widget.chatId}');
+      debugPrint('[WEBSOCKET] 🌐 Connected to production domain: wss://zaply.in.net');
     } catch (e) {
       // WebSocket connection failed - log error
-      debugPrint('[WEBSOCKET] Connection failed for chat ${widget.chatId}: $e');
+      debugPrint('[WEBSOCKET] ❌ Connection failed for chat ${widget.chatId}: $e');
       _wsConnected = false;
+      _webSocketService = null;
     }
   }
   

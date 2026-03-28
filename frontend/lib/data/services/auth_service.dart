@@ -456,6 +456,25 @@ class AuthService {
     // Tokens are HTTPOnly cookies (not in SharedPreferences)
   }
   
+  /// Get JWT access token for WebSocket authentication
+  /// Returns the stored access token if available
+  Future<String?> getAccessToken() async {
+    try {
+      debugPrint('[AUTH_GET_TOKEN] Retrieving access token for WebSocket authentication');
+      
+      if (_accessToken != null && _accessToken!.isNotEmpty) {
+        debugPrint('[AUTH_GET_TOKEN] ✓ Access token found for WebSocket');
+        return _accessToken;
+      } else {
+        debugPrint('[AUTH_GET_TOKEN] ❌ No access token available - user may need to login');
+        return null;
+      }
+    } catch (e) {
+      debugPrint('[AUTH_GET_TOKEN_ERROR] Failed to get access token: $e');
+      return null;
+    }
+  }
+
   void dispose() {
     _loginCooldownTimer?.cancel();
     _loginCooldownTimer = null;

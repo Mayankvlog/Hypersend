@@ -3397,14 +3397,17 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
     WebSocket endpoint for real-time chat messaging.
     
     PRODUCTION CRITICAL FIXES:
-    1) HTTPOnly cookie authentication (no tokens in query params)
+    1) Token-based authentication via query parameters (industry standard)
     2) Per-device connection tracking (prevents duplicate message delivery)
     3) UTC timestamp preservation (timestamps stored in DB before broadcast)
     4) Redis pub/sub integration (room-based message fan-out)
     5) Async non-blocking operations (doesn't block on slow clients)
     6) Proper reconnection handling (replaces stale connections)
     
-    IMPORTANT: Accept WebSocket BEFORE reading cookies (FastAPI requirement)
+    IMPORTANT: Accept WebSocket BEFORE reading query params (FastAPI requirement)
+    
+    Authentication: ?token=JWT_TOKEN (URL encoded)
+    Connection URL: wss://zaply.in.net/api/v1/ws/chat/{chat_id}?token=JWT_TOKEN
     
     Message format:
     {
@@ -3423,34 +3426,32 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
     pubsub = None
     
     try:
-        # IMPORTANT: Accept BEFORE reading cookies (FastAPI requirement)
+        # IMPORTANT: Accept BEFORE reading query params (FastAPI requirement)
         await websocket.accept()
         
-        # HTTPOnly cookies read karo
-        cookies = websocket.cookies
+        # Get token from query parameters (industry standard approach)
+        token = websocket.query_params.get("token")
+        
         logger.info(f"[WEBSOCKET] New connection request for chat {chat_id}")
-        logger.info(f"[WEBSOCKET] Available cookies: {list(cookies.keys())}")
+        logger.info(f"[WEBSOCKET] Token present: {token is not None}")
         
-        # Cookie name check karo - use exact names from auth.py
-        session_cookie = cookies.get("access_token")  # Primary cookie name from login
-        
-        if not session_cookie:
-            logger.error("No access_token cookie found")
-            await websocket.close(code=1008, reason="No access_token cookie")
+        if not token:
+            logger.error(" No token in WS query parameters")
+            await websocket.close(code=1008, reason="No token provided")
             return
         
-        logger.debug(f"[WEBSOCKET] Access token cookie found: {session_cookie[:20]}...")
+        logger.debug(f"[WEBSOCKET] Token found: {token[:20]}...")
         
-        # tumhara existing auth logic use karo
+        # Verify JWT token
         try:
             from auth.utils import decode_token
-            token_data = decode_token(session_cookie)
+            token_data = decode_token(token)
             user_id = token_data.user_id
             device_id = token_data.get("device_id") or "primary"
-            logger.info(f"[WEBSOCKET] WebSocket authenticated user: {user_id}, device: {device_id}")
+            logger.info(f"[WEBSOCKET] WS CONNECTED user={user_id} device={device_id} chat={chat_id}")
         except Exception as e:
-            logger.error(f"[WEBSOCKET] Invalid session: {e}")
-            await websocket.close(code=1008, reason="Invalid session")
+            logger.error(f"[WEBSOCKET] Invalid token: {e}")
+            await websocket.close(code=1008, reason="Invalid token")
             return
         
         # Verify user is member of chat
@@ -3617,7 +3618,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
     except WebSocketDisconnect:
         if device_id and chat_id:
             await manager.disconnect(chat_id, device_id, websocket)
-            logger.info(f"[WEBSOCKET] Device {device_id} (user {user_id}) disconnected from chat {chat_id}")
+            logger.info(f"🔌 WS DISCONNECTED user={user_id} device={device_id} chat={chat_id}")
     
     except Exception as e:
         logger.error(f"[WEBSOCKET] Unexpected error: {type(e).__name__}: {e}", exc_info=True)
