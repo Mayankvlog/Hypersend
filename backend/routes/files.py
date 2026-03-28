@@ -8552,7 +8552,13 @@ async def download_file_sync(file_id: str):
             Params={"Bucket": getattr(settings, 'S3_BUCKET', 'zaply-object-storage-781953767677-us-east-1-an'), "Key": s3_key},
             ExpiresIn=300  # 5 minutes
         )
-        return RedirectResponse(url=presigned_url)
+        # Return JSON response with presigned URL instead of redirect for Flutter Web compatibility
+        return {
+            "success": True,
+            "download_url": presigned_url,
+            "expires_in": 300,
+            "file_id": file_id
+        }
     except ClientError as e:
         print(f"❌ S3 download error: {e}")
         raise HTTPException(status_code=500, detail="Error generating download link")

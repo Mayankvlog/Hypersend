@@ -1613,7 +1613,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       
       if (downloadResponse.statusCode == 200 && downloadResponse.data != null) {
         final data = downloadResponse.data;
-        final presignedUrl = data['data']?['download_url'] as String?;
+        // Handle both direct response and wrapped response formats
+        String? presignedUrl;
+        
+        if (data is Map<String, dynamic>) {
+          // Direct response format from updated endpoint
+          presignedUrl = data['download_url'] as String?;
+        } else if (data['data'] != null && data['data'] is Map<String, dynamic>) {
+          // Wrapped response format
+          presignedUrl = data['data']['download_url'] as String?;
+        }
         
         if (presignedUrl != null && presignedUrl.isNotEmpty) {
           debugPrint('[FILE_WEB] Using presigned URL for download: ${presignedUrl.length > 50 ? '${presignedUrl.substring(0, 50)}...' : presignedUrl}');
