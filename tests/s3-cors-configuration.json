@@ -1,0 +1,20 @@
+{
+  "CORSRules": [
+    {
+      "AllowedHeaders": [
+        "*"
+      ],
+      "AllowedMethods": [
+        "GET",
+        "HEAD"
+      ],
+      "AllowedOrigins": [
+        "https://zaply.in.net",
+        "http://localhost:3000",
+        "http://localhost:8080"
+      ],
+      "ExposeHeaders": [],
+      "MaxAgeSeconds": 3600
+    }
+  ]
+}

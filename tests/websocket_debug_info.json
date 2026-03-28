@@ -1,0 +1,18 @@
+{
+  "websocket_endpoint": "wss://zaply.in.net/api/v1/ws/chat/{chat_id}",
+  "authentication_method": "HTTPOnly cookies (access_token)",
+  "expected_cookies": [
+    "access_token",
+    "refresh_token"
+  ],
+  "cookie_domain": ".zaply.in.net",
+  "cookie_same_site": "None",
+  "cookie_secure": true,
+  "troubleshooting_steps": [
+    "1. Ensure user is logged in via REST API first",
+    "2. Check browser developer tools -> Application -> Cookies",
+    "3. Verify access_token cookie exists for domain .zaply.in.net",
+    "4. Ensure cookie has Secure and HttpOnly flags",
+    "5. WebSocket connection should include cookies automatically"
+  ]
+}

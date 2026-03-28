@@ -3434,10 +3434,24 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
         access_token = cookies.get("access_token")
         
         logger.info(f"[WEBSOCKET] New connection request for chat {chat_id}")
+        logger.info(f"[WEBSOCKET] Total cookies available: {len(cookies) if cookies else 0}")
+        
+        # Debug: Log all available cookies (without values for security)
+        if cookies:
+            cookie_names = list(cookies.keys())
+            logger.info(f"[WEBSOCKET] Available cookie names: {cookie_names}")
+        else:
+            logger.warning("[WEBSOCKET] No cookies found in WebSocket request")
+        
         logger.info(f"[WEBSOCKET] Access token cookie present: {access_token is not None}")
         
         if not access_token:
-            logger.error("[WEBSOCKET] No access token cookie")
+            logger.error("[WEBSOCKET] No access token cookie found")
+            logger.error("[WEBSOCKET] Troubleshooting:")
+            logger.error("[WEBSOCKET] 1. User must be logged in via REST API first")
+            logger.error("[WEBSOCKET] 2. Check cookie domain: should be .zaply.in.net")
+            logger.error("[WEBSOCKET] 3. Check cookie flags: Secure, HttpOnly, SameSite=None")
+            logger.error("[WEBSOCKET] 4. Browser must support cross-site cookies")
             await websocket.close(code=1008, reason="No access token cookie")
             return
         
