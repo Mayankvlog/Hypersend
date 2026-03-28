@@ -6032,12 +6032,19 @@ async def complete_upload(
 
             
 
-            _log("info", f"File record inserted into files collection: {file_id} for upload_id: {upload_id}")
-
+            # 🔍 DEBUG: Log complete upload flow
+            _log("info", f"🔍 UPLOAD COMPLETE DEBUG", {
+                "upload_id": upload_id,
+                "current_user": current_user,
+                "s3_key": s3_key,
+                "mongo_file_id": str(file_id),
+                "step": "complete_upload_api"
+            })
             
+            _log("info", f"✅ File record inserted into files collection: {file_id} for upload_id: {upload_id}")
+            _log("info", f"🔗 MongoDB ↔ S3 mapping: file_id={file_id} → s3_key={s3_key}")
 
         except Exception as e:
-
             _log("error", f"Failed to insert file record: {e}")
 
             raise HTTPException(
@@ -7434,348 +7441,177 @@ async def download_file(
 
 
 
-        # ENHANCED: Always assign device_id - never fail due to device mismatch
-
-
-
-        # Generate temporary device_id for all clients when missing to improve compatibility
-
-
-
-        if not device_id:
-
-
-
-            # Always generate a device_id when missing (WhatsApp-like behavior)
-
-
-
-            device_id = "unknown_device"
-
-
-
-            
-
-
-
-            _log(
-
-
-
-                "info",
-
-
-
-                f"Device ID missing - assigned default device_id",
-
-
-
-                {
-
-
-
-                    "user_id": current_user,
-
-
-
-                    "file_id": file_id,
-
-
-
-                    "assigned_device_id": device_id,
-
-
-
-                    "user_agent": request.headers.get("user-agent", "unknown")[:50],
-
-
-
-                },
-
-
-
-            )
-
-
-
-
-
-        # CRITICAL: Query MongoDB files collection using ObjectId
-
-        import asyncio
-
-        from bson import ObjectId
-
-        
-
-        # Strict ObjectId validation
-
-        if not ObjectId.is_valid(file_id):
-
-            _log("warning", f"Invalid ObjectId format requested: {file_id}", {"user_id": current_user})
-
-            raise HTTPException(
-
-                status_code=status.HTTP_404_NOT_FOUND,
-
-                detail="File not found - invalid file ID format"
-
-            )
-
-        
-
-        file_oid = ObjectId(file_id)
-
-        
-
-        # Query files collection by _id
-
-        _log("info", f"Querying files collection for file_id: {file_id}", {"user_id": current_user})
-
-        
-
-        try:
-
-            file_doc = await asyncio.wait_for(
-
-                files_collection().find_one({"_id": file_oid}),
-
-                timeout=30.0,
-
-            )
-
-        except asyncio.TimeoutError:
-
-            _log("error", f"Database timeout querying file: {file_id}", {"user_id": current_user})
-
-            raise HTTPException(
-
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-
-                detail="Database timeout - please try again"
-
-            )
-
-        
-
-        if not file_doc:
-
-            _log("warning", f"File not found in database: {file_id}", {"user_id": current_user})
-
-            raise HTTPException(
-
-                status_code=status.HTTP_404_NOT_FOUND,
-
-                detail="File not found"
-
-            )
-
-        
-
-        # Validate file status
-
-        file_status = file_doc.get("status", "unknown")
-
-        if file_status != "completed":
-
-            _log(
-
-                "warning",
-
-                f"Download denied - file not completed: {file_id} (status: {file_status})",
-
-                {
-
-                    "file_id": file_id,
-
-                    "status": file_status,
-
-                    "user_id": current_user,
-
-                }
-
-            )
-
-            raise HTTPException(
-
-                status_code=status.HTTP_404_NOT_FOUND,
-
-                detail=f"File not available - upload not completed (status: {file_status})"
-
-            )
-
-        
-
-        # Extract S3 key
-
-        s3_key = file_doc.get("s3_key") or file_doc.get("object_key")
-
-        if not s3_key:
-
-            _log("error", f"S3 key missing in file record: {file_id}", {"user_id": current_user})
-
-            raise HTTPException(
-
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-
-                detail="File record corrupted - missing S3 key"
-
-            )
-
-        
-
-        _log("info", f"File found and validated: {file_id}", {
-
+        # 🔍 DEBUG: Log download request flow
+        _log("info", f"🔍 DOWNLOAD REQUEST DEBUG", {
             "file_id": file_id,
-
+            "current_user": current_user,
+            "step": "download_api_start"
+        })
+        
+        # CRITICAL: Query MongoDB files collection using ObjectId
+        import asyncio
+        from bson import ObjectId
+        
+        # Strict ObjectId validation
+        if not ObjectId.is_valid(file_id):
+            _log("warning", f"Invalid ObjectId format requested: {file_id}", {"user_id": current_user})
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found - invalid file ID format"
+            )
+        
+        file_oid = ObjectId(file_id)
+        
+        # Query files collection by _id
+        try:
+            file_doc = await asyncio.wait_for(
+                files_collection().find_one({"_id": file_oid}),
+                timeout=30.0,
+            )
+        except asyncio.TimeoutError:
+            _log("error", f"Database timeout querying file: {file_id}", {"user_id": current_user})
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database timeout - please try again"
+            )
+        
+        if not file_doc:
+            _log("warning", f"File not found in database: {file_id}", {"user_id": current_user})
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found"
+            )
+        
+        # Validate file status
+        file_status = file_doc.get("status", "unknown")
+        if file_status != "completed":
+            _log(
+                "warning",
+                f"Download denied - file not completed: {file_id} (status: {file_status})",
+                {
+                    "file_id": file_id,
+                    "status": file_status,
+                    "user_id": current_user,
+                }
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"File not available - upload not completed (status: {file_status})"
+            )
+        
+        # Extract S3 key
+        s3_key = file_doc.get("s3_key") or file_doc.get("object_key")
+        if not s3_key:
+            _log("error", f"S3 key missing in file record: {file_id}", {"user_id": current_user})
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="File record corrupted - missing S3 key"
+            )
+        
+        _log("info", f"File found and validated: {file_id}", {
+            "file_id": file_id,
             "s3_key": s3_key,
-
             "status": file_status,
-
             "user_id": current_user
-
         })
 
 
 
 
-
-        # Generate S3 pre-signed URL for download
-
-        try:
-
-            from backend.config import settings
-
-            s3_client = _get_s3_client()
-
+        # ENHANCED: Always assign device_id - never fail due to device mismatch
+        # Generate temporary device_id for all clients when missing to improve compatibility
+        if not device_id:
+            # Always generate a device_id when missing (WhatsApp-like behavior)
+            device_id = "unknown_device"
             
-
-            if s3_client:
-
-                # Generate 5-minute pre-signed URL for direct download
-
-                download_url = s3_client.generate_presigned_url(
-
-                    "get_object",
-
-                    Params={"Bucket": settings.S3_BUCKET, "Key": s3_key},
-
-                    ExpiresIn=300,  # 5 minutes
-
-                )
-
-                
-
-                _log(
-
-                    "info",
-
-                    f"Generated S3 pre-signed URL for file: {file_id}",
-
-                    {
-
-                        "file_id": file_id,
-
-                        "s3_key": s3_key,
-
-                        "bucket": settings.S3_BUCKET,
-
-                        "user_id": current_user,
-
-                        "device_id": device_id,
-
-                    }
-
-                )
-
-                
-
-                # Return response with download URL
-
-                return {
-
-                    "status": "success",
-
-                    "status_code": 200,
-
-                    "detail": "File access granted",
-
-                    "data": {
-
-                        "file_id": file_id,
-
-                        "download_url": download_url,
-
-                        "expires_in": 300,  # 5 minutes
-
-                        "file_name": file_doc.get("filename", "unknown"),
-
-                        "file_size": file_doc.get("file_size", 0),
-
-                        "mime_type": file_doc.get("mime_type", "application/octet-stream"),
-
-                    }
-
-                }
-
-            else:
-
-                # S3 not configured - return 503
-
-                _log(
-
-                    "error",
-
-                    f"S3 not configured for file download: {file_id}",
-
-                    {
-
-                        "file_id": file_id,
-
-                        "s3_client": s3_client is not None,
-
-                        "s3_key": s3_key,
-
-                    }
-
-                )
-
-                raise HTTPException(
-
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-
-                    detail="Storage service not available"
-
-                )
-
-                
-
-        except Exception as s3_error:
-
             _log(
-
-                "error",
-
-                f"S3 pre-signed URL generation failed: {s3_error}",
-
+                "info",
+                f"Device ID missing - assigned default device_id",
                 {
-
+                    "user_id": current_user,
                     "file_id": file_id,
-
-                    "s3_key": s3_key,
-
-                    "error": str(s3_error),
-
-                }
-
+                    "assigned_device_id": device_id,
+                    "user_agent": request.headers.get("user-agent", "unknown")[:50],
+                },
             )
-
+        
+        # Generate S3 pre-signed URL for download
+        try:
+            from backend.config import settings
+            s3_client = _get_s3_client()
+            
+            if s3_client:
+                # Generate 5-minute pre-signed URL for direct download
+                download_url = s3_client.generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": settings.S3_BUCKET, "Key": s3_key},
+                    ExpiresIn=300,  # 5 minutes
+                )
+                
+                _log(
+                    "info",
+                    f"Generated S3 pre-signed URL for file: {file_id}",
+                    {
+                        "file_id": file_id,
+                        "s3_key": s3_key,
+                        "bucket": settings.S3_BUCKET,
+                        "user_id": current_user,
+                        "device_id": device_id,
+                    }
+                )
+                
+                # 🔍 DEBUG: Log successful download flow
+                _log("info", f"🔍 DOWNLOAD SUCCESS DEBUG", {
+                    "file_id": file_id,
+                    "s3_key": s3_key,
+                    "current_user": current_user,
+                    "step": "download_api_success"
+                })
+                _log("info", f"🔗 MongoDB ↔ S3 mapping verified: file_id={file_id} → s3_key={s3_key}")
+                
+                # Return response with download URL
+                return {
+                    "status": "success",
+                    "status_code": 200,
+                    "detail": "File access granted",
+                    "data": {
+                        "file_id": file_id,
+                        "download_url": download_url,
+                        "expires_in": 300,  # 5 minutes
+                        "file_name": file_doc.get("filename", "unknown"),
+                        "file_size": file_doc.get("file_size", 0),
+                        "mime_type": file_doc.get("mime_type", "application/octet-stream"),
+                    }
+                }
+            else:
+                # S3 not configured - return 503
+                _log(
+                    "error",
+                    f"S3 not configured for file download: {file_id}",
+                    {
+                        "file_id": file_id,
+                        "s3_client": s3_client is not None,
+                        "s3_key": s3_key,
+                    }
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Storage service not available"
+                )
+                
+        except Exception as s3_error:
+            _log(
+                "error",
+                f"S3 pre-signed URL generation failed: {s3_error}",
+                {
+                    "file_id": file_id,
+                    "s3_key": s3_key,
+                    "error": str(s3_error),
+                }
+            )
             raise HTTPException(
-
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-
                 detail=f"Storage service temporarily unavailable: {str(s3_error)}"
-
             )
 
 
@@ -15468,15 +15304,35 @@ async def get_shared_users(file_id: str, current_user: str = Depends(get_current
 
     try:
 
+
+
+        # 🔍 DEBUG: Log download request flow
+
+        _log("info", f"🔍 DOWNLOAD REQUEST DEBUG", {
+
+            "file_id": file_id,
+
+            "current_user": current_user,
+
+            "step": "download_api_start"
+
+        })
+
+
+
+        # CRITICAL: Query MongoDB files collection using ObjectId
+
+        import asyncio
+
         from bson import ObjectId
 
-        
 
-        # Validate and convert file_id to ObjectId
+
+        # Strict ObjectId validation
 
         if not ObjectId.is_valid(file_id):
 
-            _log("warning", f"Invalid ObjectId format in get_shared_users: {file_id}", {"user_id": current_user})
+            _log("warning", f"Invalid ObjectId format requested: {file_id}", {"user_id": current_user})
 
             raise HTTPException(
 
@@ -15486,15 +15342,35 @@ async def get_shared_users(file_id: str, current_user: str = Depends(get_current
 
             )
 
-        
+
 
         file_oid = ObjectId(file_id)
 
-        file_doc = await asyncio.wait_for(
 
-            files_collection().find_one({"_id": file_oid}), timeout=30.0
 
-        )
+        # Query files collection by _id
+
+        try:
+
+            file_doc = await asyncio.wait_for(
+
+                files_collection().find_one({"_id": file_oid}),
+
+                timeout=30.0,
+
+            )
+
+        except asyncio.TimeoutError:
+
+            _log("error", f"Database timeout querying file: {file_id}", {"user_id": current_user})
+
+            raise HTTPException(
+
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+
+                detail="Database timeout - please try again"
+
+            )
 
 
 
