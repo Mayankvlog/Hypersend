@@ -2586,7 +2586,7 @@ def files_collection():
 
     """Get files collection - CRITICAL: Real database only"""
 
-    from backend.database import files_collection as _files_collection
+    from ..db_proxy import files_collection as _files_collection
 
     return _files_collection()
 
@@ -2596,7 +2596,7 @@ def users_collection():
 
     """Get users collection - CRITICAL: Real database only"""
 
-    from backend.database import users_collection as _users_collection
+    from ..db_proxy import users_collection as _users_collection
 
     return _users_collection()
 
@@ -2606,9 +2606,9 @@ def uploads_collection():
 
     """Get uploads collection - CRITICAL: Real database only"""
 
-    from backend.database import get_database
+    from ..db_proxy import uploads_collection as _uploads_collection
 
-    return get_database()["uploads"]
+    return _uploads_collection()
 
 
 
@@ -2616,9 +2616,9 @@ def chats_collection():
 
     """Get chats collection - CRITICAL: Real database only"""
 
-    from backend.database import get_database
+    from ..db_proxy import chats_collection as _chats_collection
 
-    return get_database()["chats"]
+    return _chats_collection()
 
 
 
@@ -7122,7 +7122,7 @@ async def download_file(
     device_id: Optional[str] = Query(
         None, description="Device ID (optional for web clients)"
     ),
-    current_user: str = Depends(get_current_user_download_dependency()),
+    current_user: str = Depends(get_current_user_download_dependency),
 ):
     """🔥 ULTIMATE SAFE VERSION - Download with comprehensive error handling"""
     try:
@@ -7184,7 +7184,10 @@ async def download_file(
         print("💥 DOWNLOAD ERROR:", str(e))
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")@router.post("/{file_id}/ack")
+        raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
+
+
+@router.post("/{file_id}/ack")
 
 
 
@@ -8513,74 +8516,46 @@ async def process_media_ack(
 
 
 @router.get("/download/{file_id}")
-async def download_file(file_id: str, token_data: dict = Depends(verify_jwt_token)):
-    """Download file with StreamingResponse - returns actual file content"""
-
-    from bson import ObjectId
-    from fastapi.responses import StreamingResponse, Response
-    from fastapi import HTTPException
-    import boto3
-
-    print(f"🔍 DEBUG: Downloading file_id: {file_id}")
-    
-    if not ObjectId.is_valid(file_id):
-        print(f"❌ DEBUG: Invalid file_id format")
-        raise HTTPException(404, "File not found")
-
-    file_oid = ObjectId(file_id)
-    file_doc = await uploads_collection().find_one({"_id": file_oid})
-
-    print(f"🔍 DEBUG: Mongo result: {file_doc}")
-    
-    if not file_doc:
-        print(f"❌ DEBUG: File not found in MongoDB")
-        raise HTTPException(404, "File not found")
-
-    # CRITICAL: Check file status and S3 upload status
-    status = file_doc.get("status")
-    s3_uploaded = file_doc.get("s3_uploaded")
-    s3_key = file_doc.get("s3_key")
-    
-    print(f"🔍 DEBUG: File status: {status}")
-    print(f"🔍 DEBUG: S3 uploaded: {s3_uploaded}")
-    print(f"🔍 DEBUG: S3 key: {s3_key}")
-    
-    if status != "completed":
-        print(f"❌ DEBUG: Upload not finished - status: {status}")
-        raise HTTPException(404, "Upload not finished")
-
-    if not s3_uploaded:
-        print(f"❌ DEBUG: S3 not ready - s3_uploaded: {s3_uploaded}")
-        raise HTTPException(404, "S3 not ready")
-
-    if not s3_key:
-        print(f"❌ DEBUG: File S3 key not found")
-        raise HTTPException(404, "File S3 key not found")
-
-    bucket = file_doc.get("bucket", getattr(settings, 'S3_BUCKET', 'zaply-object-storage-781953767677-us-east-1-an'))
-    mime_type = file_doc.get("mime_type", "image/jpeg")
-
+async def download_file_sync(file_id: str):
+    """
+    Download file by file_id.
+    Handles both ObjectId and string _id types in MongoDB.
+    Returns a presigned S3 URL for actual download.
+    """
+    # 1️⃣ Convert to ObjectId if possible
     try:
-        # Get S3 client
+        mongo_id = ObjectId(file_id)
+    except Exception:
+        mongo_id = file_id  # fallback to string
+
+    # 2️⃣ Fetch file record from MongoDB
+    file_record = await files_collection().find_one({"_id": mongo_id})
+    
+    if not file_record:
+        print(f"❌ File not found in MongoDB: {file_id}")
+        raise HTTPException(status_code=404, detail="File not found")
+
+    s3_key = file_record.get("s3_key")
+    
+    if not s3_key:
+        print(f"❌ S3 key missing in MongoDB record: {file_id}")
+        raise HTTPException(status_code=404, detail="File not found in S3")
+
+    # 3️⃣ Generate presigned S3 URL
+    try:
         s3_client = _get_s3_client()
         if not s3_client:
             raise HTTPException(503, "S3 service not available")
-
-        # Get S3 object
-        obj = s3_client.get_object(Bucket=bucket, Key=s3_key)
-
-        # Return StreamingResponse with actual file content
-        return StreamingResponse(
-            obj["Body"],
-            media_type=mime_type,
-            headers={
-                "Content-Disposition": f"inline; filename={file_doc.get('file_name', 'file')}"
-            }
+            
+        presigned_url = s3_client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": getattr(settings, 'S3_BUCKET', 'zaply-object-storage-781953767677-us-east-1-an'), "Key": s3_key},
+            ExpiresIn=300  # 5 minutes
         )
-
-    except Exception as e:
-        _log("error", f"S3 download failed for {s3_key}: {e}")
-        raise HTTPException(500, f"Download failed: {str(e)}")
+        return RedirectResponse(url=presigned_url)
+    except ClientError as e:
+        print(f"❌ S3 download error: {e}")
+        raise HTTPException(status_code=500, detail="Error generating download link")
 
 
 @router.get("/{file_id}/download-url")
