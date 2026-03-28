@@ -7439,10 +7439,10 @@ async def download_file(
         
         file_oid = ObjectId(file_id)
         
-        # Query uploads collection by _id - FIXED: was using files_collection
+        # Query files collection by _id - FIXED: was using uploads_collection
         try:
             file_doc = await asyncio.wait_for(
-                uploads_collection().find_one({"_id": file_oid}),
+                files_collection().find_one({"_id": file_oid}),
                 timeout=30.0,
             )
         except asyncio.TimeoutError:
