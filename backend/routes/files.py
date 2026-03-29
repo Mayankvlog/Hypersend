@@ -5897,16 +5897,30 @@ async def complete_upload(
 
         # Verify S3 object exists before completing upload
 
-
-
         try:
-
-            s3_client.head_object(Bucket=settings.S3_BUCKET, Key=s3_key)
-
+            s3_response = s3_client.head_object(Bucket=settings.S3_BUCKET, Key=s3_key)
             _log("info", f"S3 object verified: {s3_key}")
-
+            
+            # CRITICAL FIX: Handle file size variance due to multipart boundary cleaning
+            expected_size = upload_record.get("file_size", 0)
+            actual_size = s3_response.get("ContentLength", 0)
+            final_file_size = actual_size if actual_size > 0 else expected_size
+            
+            if expected_size > 0:
+                size_diff = abs(actual_size - expected_size)
+                # Allow up to 1% variance or 1KB minimum for multipart boundary cleaning differences
+                max_variance = max(1024, int(expected_size * 0.01))
+                
+                if size_diff <= max_variance:
+                    _log("info", f"File assembly size variance (acceptable): expected={expected_size}, actual={actual_size}, diff={size_diff}")
+                else:
+                    _log("error", f"File assembly size mismatch: expected={expected_size}, actual={actual_size}")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"File size mismatch: expected {expected_size} bytes, got {actual_size} bytes"
+                    )
+            
         except Exception as e:
-
             _log("error", f"S3 object verification failed for {s3_key}: {e}")
 
 
@@ -6004,7 +6018,7 @@ async def complete_upload(
                 "file_url": file_url,
                 "filename": upload_record.get("filename", f"file_{upload_id}"),
                 "mime_type": upload_record.get("mime_type", "application/octet-stream"),
-                "file_size": upload_record.get("file_size", 0),
+                "file_size": final_file_size,
                 "s3_uploaded": True,  # CRITICAL: Add this field for download endpoint
                 "s3_verified": True,
                 "verification_timestamp": datetime.now(timezone.utc),
