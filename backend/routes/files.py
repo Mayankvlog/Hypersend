@@ -3735,13 +3735,75 @@ except ImportError:
 
 
 
+# ============================================================================
+# MULTIPART BOUNDARY DETECTION AND CLEANING UTILITIES
+# ============================================================================
+
+def _detect_multipart_boundary(data: bytes) -> Optional[bytes]:
+    """
+    Detect if data contains multipart form-data and extract the boundary.
+    
+    Returns the boundary marker (e.g., b"------WebKitFormBoundary...") or None.
+    """
+    if not data or not data.startswith(b"--"):
+        return None
+    
+    # First line should be the boundary marker
+    first_crlf = data.find(b"\r\n")
+    if first_crlf > 2:  # At least "--X"
+        potential_boundary = data[:first_crlf]
+        if potential_boundary.startswith(b"--"):
+            return potential_boundary
+    
+    return None
+
+
+def _clean_multipart_boundaries(data: bytes) -> bytes:
+    """
+    Remove multipart form-data wrapper from binary data.
+    
+    Safely extracts file content from multipart-wrapped chunks.
+    Returns original data if it doesn't appear to be multipart-wrapped.
+    """
+    if not data or len(data) < 10:
+        return data
+    
+    try:
+        # Check if this looks like multipart data
+        boundary = _detect_multipart_boundary(data)
+        if not boundary:
+            return data
+        
+        # Find end of headers (double CRLF)
+        headers_end = data.find(b"\r\n\r\n")
+        if headers_end <= 0:
+            return data
+        
+        file_start = headers_end + 4
+        if file_start >= len(data):
+            return data
+        
+        # Find closing boundary
+        closing_boundary = b"\r\n" + boundary + b"--"
+        closing_idx = data.find(closing_boundary, file_start)
+        
+        if closing_idx > file_start:
+            # Extract the file content (between headers and closing boundary)
+            return data[file_start:closing_idx]
+        else:
+            # Closing boundary not found, try to at least skip headers
+            return data[file_start:]
+    
+    except Exception as e:
+        logger.warning(f"Failed to clean multipart boundaries: {e}")
+        return data
+
+
+# Stub functions for test patching compatibility
+
 async def _save_chunk_to_disk(upload_id: str, chunk_index: int, data: bytes) -> bool:
 
-
-
     """Stub function for saving chunks to disk - used by tests"""
-
-
 
     return True
 
@@ -5198,54 +5260,23 @@ async def upload_chunk(
 
 
             # CRITICAL FIX: Handle multipart form-data properly
-            # The frontend sends chunks via multipart/form-data, so we need to extract just the file bytes
+            # Extract actual file bytes from multipart wrapper (binary-safe parsing)
             content_type = request.headers.get("content-type", "").lower()
             
-            if "multipart" in content_type and chunk_data.startswith(b"--"):
-                # This is multipart/form-data - extract the actual file bytes
-                # Format: --boundary\r\nContent-Disposition: ...[headers]...\r\n\r\n[FILE_BYTES]\r\n--boundary--
+            if "multipart" in content_type:
                 try:
-                    # Find the double CRLF that marks the end of headers
-                    boundary_end = chunk_data.find(b"\r\n\r\n")
-                    
-                    if boundary_end > 0:
-                        file_start = boundary_end + 4
-                        
-                        # Find the closing boundary - look for the trailing boundary marker
-                        # The format ends with: \r\n--{boundary}--
-                        # We need to find where the actual file content ends
-                        
-                        # Strategy: Find all occurrences of \r\n-- and pick the last significant one
-                        closing_boundary_idx = chunk_data.rfind(b"\r\n--")
-                        
-                        if closing_boundary_idx > file_start:
-                            # Extract just the file bytes (exclude trailing \r\n--)
-                            extracted_data = chunk_data[file_start:closing_boundary_idx]
-                            if len(extracted_data) > 0 and not extracted_data.startswith(b"--") and not extracted_data.startswith(b"Content-"):
-                                chunk_data = extracted_data
-                                print(f"[MULTIPART_FIX] ✓ Extracted {len(chunk_data)} bytes from multipart wrapper")
-                            else:
-                                # Data still has markers - do more aggressive extraction
-                                print(f"[MULTIPART_FIX] ⚠ Extraction left markers, doing aggressive cleanup")
-                                # Remove any leading Content-Disposition lines
-                                content_disp_end = chunk_data.find(b"\r\n\r\n")
-                                if content_disp_end > 0:
-                                    chunk_data = chunk_data[content_disp_end + 4:]
-                                # Remove trailing boundaries
-                                while chunk_data.endswith(b"\r\n--") or chunk_data.endswith(b"--"):
-                                    if chunk_data.endswith(b"\r\n--"):
-                                        chunk_data = chunk_data[:-4]
-                                    elif chunk_data.endswith(b"--"):
-                                        chunk_data = chunk_data[:-2]
-                        
+                    cleaned_data = _clean_multipart_boundaries(chunk_data)
+                    if cleaned_data != chunk_data and len(cleaned_data) > 0:
+                        original_len = len(chunk_data)
+                        chunk_data = cleaned_data
+                        print(f"[MULTIPART_FIX] ✓ Cleaned {original_len} → {len(chunk_data)} bytes")
+                    else:
+                        print(f"[MULTIPART_FIX] No multipart wrapper detected or data unchanged")
                 except Exception as parse_error:
-                    print(f"[MULTIPART_FIX] ⚠ Failed to parse multipart data: {parse_error}")
-                    # Continue with raw data if extraction fails
-
-
-
-
-                    # Continue with raw data if parsing fails
+                    print(f"[MULTIPART_FIX] ✗ Failed to clean multipart data: {parse_error}")
+                    logger.warning(f"Multipart cleaning failed: {parse_error}")
+                    # Continue with original data if extraction fails
+                    pass
 
 
 
@@ -9170,7 +9201,7 @@ async def get_media_by_id_main(
 
 
 
-        if not file_id or not ObjectId.is_valid(file_id):
+        if not file_id or (not ObjectId.is_valid(file_id) and not isinstance(file_id, str)):
 
 
 
@@ -9214,7 +9245,7 @@ async def get_media_by_id_main(
 
 
 
-                uploads_collection().find_one({"_id": ObjectId(file_id)}),
+                uploads_collection().find_one({"_id": file_id}),
 
 
 
