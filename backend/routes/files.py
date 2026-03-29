@@ -7112,24 +7112,40 @@ async def download_file(
         print("🚀 CHECKING S3 OBJECT...")
         
         try:
-            # Check if object exists first
+            # Get S3 object directly for streaming
             obj = s3_client.get_object(Bucket=bucket, Key=s3_key)
             print("✅ S3 OBJECT EXISTS")
             
-            # Generate presigned URL
-            url = s3_client.generate_presigned_url(
-                "get_object",
-                Params={
-                    "Bucket": bucket,
-                    "Key": s3_key
-                },
-                ExpiresIn=3600
-            )
-            print("✅ PRESIGNED URL GENERATED")
+            # Determine content type
+            content_type = obj.get("ContentType")
+            print("🔍 ORIGINAL CONTENT TYPE:", content_type)
             
-            # Return redirect to presigned URL
-            from fastapi.responses import RedirectResponse
-            return RedirectResponse(url)
+            # Force correct content type based on file extension
+            if not content_type or content_type == "binary/octet-stream":
+                if s3_key.endswith(".png"):
+                    content_type = "image/png"
+                elif s3_key.endswith(".jpg") or s3_key.endswith(".jpeg"):
+                    content_type = "image/jpeg"
+                elif s3_key.endswith(".gif"):
+                    content_type = "image/gif"
+                elif s3_key.endswith(".webp"):
+                    content_type = "image/webp"
+                else:
+                    content_type = "application/octet-stream"
+            
+            print("✅ FINAL CONTENT TYPE:", content_type)
+            print("📦 S3 KEY:", s3_key)
+            
+            # Return StreamingResponse with proper content type
+            from fastapi.responses import StreamingResponse
+            return StreamingResponse(
+                obj["Body"],
+                media_type=content_type,
+                headers={
+                    "Content-Disposition": "inline",
+                    "Cache-Control": "public, max-age=3600"
+                }
+            )
             
         except s3_client.exceptions.ClientError as e:
             error_code = e.response['Error']['Code']
@@ -8525,23 +8541,31 @@ async def download_file_sync(file_id: str):
             Key=s3_key
         )
         
-        # Get content type from file record or S3 object
+        # Get content type and fix if needed
         content_type = file_record.get("mime_type") or file_obj.get('ContentType', 'application/octet-stream')
         filename = file_record.get("filename", f"file_{file_id}")
         
-        # Stream the file content directly
-        from fastapi.responses import StreamingResponse
+        # Force correct content type based on file extension
+        if not content_type or content_type == "application/octet-stream":
+            if s3_key.endswith(".png"):
+                content_type = "image/png"
+            elif s3_key.endswith(".jpg") or s3_key.endswith(".jpeg"):
+                content_type = "image/jpeg"
+            elif s3_key.endswith(".gif"):
+                content_type = "image/gif"
+            elif s3_key.endswith(".webp"):
+                content_type = "image/webp"
         
-        def iterfile():
-            yield file_obj['Body'].read(1024 * 1024)  # 1MB chunks
+        print("✅ SYNC DOWNLOAD CONTENT TYPE:", content_type)
         
+        # Stream directly from S3 without loading into memory
         headers = {
-            'Content-Disposition': f'attachment; filename="{filename}"',
-            'Cache-Control': 'no-cache'
+            'Content-Disposition': 'inline',  # Changed from attachment to inline for image preview
+            'Cache-Control': 'public, max-age=3600'
         }
         
         return StreamingResponse(
-            iterfile(), 
+            file_obj['Body'],  # Stream directly without .read()
             media_type=content_type,
             headers=headers
         )
