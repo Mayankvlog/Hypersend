@@ -4,7 +4,7 @@ def test_download_binary():
     """Test the download endpoint and save binary data"""
     
     file_id = "69c777ebaf94684d63c5361b"
-    url = f"https://zaply.in.net/api/v1/files/download/{file_id}"
+    url = f"http://localhost:8000/api/v1/files/download/{file_id}"
     
     print(f"🔍 Testing binary download: {file_id}")
     

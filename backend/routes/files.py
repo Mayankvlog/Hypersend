@@ -7155,10 +7155,15 @@ async def download_file(
                 print(f"⚠️ WARNING: Content type says image but file signature doesn't match: {first_bytes}")
                 # Still return the content but with correct content type based on signature
             
-            # Return StreamingResponse with proper content type
-            from fastapi.responses import StreamingResponse
-            return StreamingResponse(
-                body,
+            # CRITICAL FIX: Read all data and return as Response instead of StreamingResponse
+            # This prevents multipart boundary data from being sent instead of clean image data
+            from fastapi.responses import Response
+            
+            # Read all data from S3 body
+            data = body.read()
+            
+            return Response(
+                content=data,
                 media_type=content_type,
                 headers={
                     "Content-Disposition": "inline",
@@ -8583,8 +8588,15 @@ async def download_file_sync(file_id: str):
             'Cache-Control': 'public, max-age=3600'
         }
         
-        return StreamingResponse(
-            file_obj['Body'],  # Stream directly without .read()
+        # CRITICAL FIX: Read all data and return as Response instead of StreamingResponse
+        # This prevents multipart boundary data from being sent instead of clean image data
+        from fastapi.responses import Response
+        
+        # Read all data from S3 body
+        data = file_obj['Body'].read()
+        
+        return Response(
+            content=data,
             media_type=content_type,
             headers=headers
         )
