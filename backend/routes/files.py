@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import re
 import hashlib
@@ -11,7 +13,7 @@ import time
 import secrets
 import base64
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Union, AsyncGenerator
+from typing import Optional, List, Dict, Any, Union, AsyncGenerator, TYPE_CHECKING, TypeAlias
 from io import BytesIO
 from datetime import datetime, timezone, timedelta
 import jwt
@@ -74,6 +76,22 @@ from fastapi.responses import (
 )
 
 from fastapi.encoders import jsonable_encoder
+
+# Import request/response models with proper type checking support
+if TYPE_CHECKING:
+    from ..models import FileInitRequest, FileCompleteResponse, FileDeliveryAckRequest
+else:
+    # Runtime fallback - use string annotations or dummy classes
+    try:
+        from ..models import FileInitRequest, FileCompleteResponse, FileDeliveryAckRequest
+    except (ImportError, ModuleNotFoundError):
+        try:
+            from models import FileInitRequest, FileCompleteResponse, FileDeliveryAckRequest
+        except (ImportError, ModuleNotFoundError):
+            # Pylance-safe fallback using TypeAlias
+            FileInitRequest: TypeAlias = Any
+            FileCompleteResponse: TypeAlias = Any
+            FileDeliveryAckRequest: TypeAlias = Any
 
 IS_PRODUCTION = (
 
@@ -3869,28 +3887,6 @@ from typing import Any
 
 
 
-# Import proper request types
-
-try:
-
-    from ..models import FileInitRequest, FileCompleteResponse, FileDeliveryAckRequest
-
-except ImportError:
-
-    try:
-
-        from models import FileInitRequest, FileCompleteResponse, FileDeliveryAckRequest
-
-    except ImportError:
-
-        # Fallback to Any if models not available
-
-        FileInitRequest = Any
-
-        FileCompleteResponse = Any
-
-        FileDeliveryAckRequest = Any
-
 
 
 
@@ -5190,11 +5186,68 @@ async def upload_chunk(
 
 
 
+
             chunk_data = await request.body()
 
 
 
+
             
+
+
+
+
+            # CRITICAL FIX: Handle multipart form-data properly
+            # The frontend sends chunks via multipart/form-data, so we need to extract just the file bytes
+            content_type = request.headers.get("content-type", "").lower()
+            
+            if "multipart" in content_type and chunk_data.startswith(b"--"):
+                # This is multipart/form-data - extract the actual file bytes
+                # Format: --boundary\r\nContent-Disposition: ...[headers]...\r\n\r\n[FILE_BYTES]\r\n--boundary--
+                try:
+                    # Find the double CRLF that marks the end of headers
+                    boundary_end = chunk_data.find(b"\r\n\r\n")
+                    
+                    if boundary_end > 0:
+                        file_start = boundary_end + 4
+                        
+                        # Find the closing boundary - look for the trailing boundary marker
+                        # The format ends with: \r\n--{boundary}--
+                        # We need to find where the actual file content ends
+                        
+                        # Strategy: Find all occurrences of \r\n-- and pick the last significant one
+                        closing_boundary_idx = chunk_data.rfind(b"\r\n--")
+                        
+                        if closing_boundary_idx > file_start:
+                            # Extract just the file bytes (exclude trailing \r\n--)
+                            extracted_data = chunk_data[file_start:closing_boundary_idx]
+                            if len(extracted_data) > 0 and not extracted_data.startswith(b"--") and not extracted_data.startswith(b"Content-"):
+                                chunk_data = extracted_data
+                                print(f"[MULTIPART_FIX] ✓ Extracted {len(chunk_data)} bytes from multipart wrapper")
+                            else:
+                                # Data still has markers - do more aggressive extraction
+                                print(f"[MULTIPART_FIX] ⚠ Extraction left markers, doing aggressive cleanup")
+                                # Remove any leading Content-Disposition lines
+                                content_disp_end = chunk_data.find(b"\r\n\r\n")
+                                if content_disp_end > 0:
+                                    chunk_data = chunk_data[content_disp_end + 4:]
+                                # Remove trailing boundaries
+                                while chunk_data.endswith(b"\r\n--") or chunk_data.endswith(b"--"):
+                                    if chunk_data.endswith(b"\r\n--"):
+                                        chunk_data = chunk_data[:-4]
+                                    elif chunk_data.endswith(b"--"):
+                                        chunk_data = chunk_data[:-2]
+                        
+                except Exception as parse_error:
+                    print(f"[MULTIPART_FIX] ⚠ Failed to parse multipart data: {parse_error}")
+                    # Continue with raw data if extraction fails
+
+
+
+
+                    # Continue with raw data if parsing fails
+
+
 
 
 

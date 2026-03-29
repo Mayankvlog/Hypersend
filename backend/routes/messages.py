@@ -6806,11 +6806,13 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, token: str = No
 
     5) Proper reconnection handling (replaces stale connections)
 
+    6) HTTPOnly cookie-based authentication (no token query parameter needed)
+
     
 
     Query parameters:
 
-    - token: JWT authentication token (REQUIRED)
+    - token: JWT authentication token (OPTIONAL - for backward compatibility)
 
     - device_id: Optional device identifier (defaults to "primary")
 
@@ -6850,7 +6852,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, token: str = No
 
     try:
 
-        # ENHANCED: Extract token from query parameters with comprehensive logging
+        # ENHANCED: Extract token from query parameters or HTTPOnly cookies
 
         logger.info(f"[WEBSOCKET] New connection request for chat {chat_id}")
 
@@ -6884,9 +6886,20 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str, token: str = No
 
         
 
+        # CRITICAL FIX: Try multiple auth methods for HTTPOnly cookie support
+        # Priority 1: Query parameter (backward compatibility)
+        # Priority 2: HTTPOnly cookie (current secure method)
+        if not token:
+            # Try to get from HTTPOnly cookie
+            token = websocket.cookies.get("access_token")
+            if token:
+                logger.debug(f"[WEBSOCKET] Token obtained from HTTPOnly cookie for chat {chat_id}")
+            else:
+                logger.debug(f"[WEBSOCKET] No token found in query params or HTTPOnly cookies")
+
         if not token:
 
-            logger.error(f"[WEBSOCKET] No token provided in query params for chat {chat_id}")
+            logger.error(f"[WEBSOCKET] No token provided (neither query param nor HTTPOnly cookie) for chat {chat_id}")
 
             await websocket.close(code=4001, reason="Token required")
 
