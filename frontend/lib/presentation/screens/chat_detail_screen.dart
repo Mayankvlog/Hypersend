@@ -19,7 +19,6 @@ import '../../core/theme/app_theme.dart';
 import '../../data/models/chat.dart';
 import '../../data/models/message.dart';
 import '../../data/services/service_provider.dart';
-import '../../data/services/websocket_service.dart';
 import '../widgets/message_bubble.dart';
 import '../../core/utils/time_formatter.dart';
 import '../../core/utils/emoji_utils.dart';
@@ -49,7 +48,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   late List<dynamic> _listItems;
   
   // CRITICAL: Persistent WebSocket connection (initialized once)
-  WebSocketService? _webSocketService;
+  dynamic _wsConnection;
   bool _wsConnected = false;
   
   // Camera functionality removed - only Photos/Videos option available
@@ -67,9 +66,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   void dispose() {
     _messageController.dispose();
     // Close WebSocket connection
-    if (_webSocketService != null) {
-      _webSocketService!.disconnect();
-      _webSocketService = null;
+    if (_wsConnection != null) {
+      serviceProvider.apiService.closeChatConnection(widget.chatId);
+      _wsConnection = null;
     }
     super.dispose();
   }
@@ -1072,25 +1071,33 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   /// Initialize persistent WebSocket connection for real-time message delivery
   /// CRITICAL: This runs ONCE per chat - no re-initialization on re-render
   Future<void> _initializeWebSocket() async {
-    if (_wsConnected || _webSocketService != null) {
+    if (_wsConnected || _wsConnection != null) {
       return; // Already initialized
     }
     
     try {
-      // Create WebSocket service instance
-      _webSocketService = WebSocketService();
+      // Get or create persistent WebSocket connection (with automatic reconnection)
+      _wsConnection = serviceProvider.apiService.getOrCreateChatConnection(
+        chatId: widget.chatId,
+        userId: _meId,
+        deviceId: 'flutter_client_${_meId.hashCode}',
+        onMessage: _handleWebSocketMessage,
+        onError: _handleWebSocketError,
+      );
       
-      // Connect to production domain with token authentication
-      await _webSocketService!.connect(widget.chatId);
-      _wsConnected = true;
-      
-      debugPrint('[WEBSOCKET] ✅ Persistent WebSocket connection established for chat ${widget.chatId}');
-      debugPrint('[WEBSOCKET] 🌐 Connected to production domain: wss://zaply.in.net');
+      // Start the WebSocket connection only if _wsConnection is non-null
+      if (_wsConnection != null) {
+        await _wsConnection!.connect();
+        _wsConnected = true;
+        debugPrint('[WEBSOCKET] Persistent WebSocket connection established for chat ${widget.chatId}');
+      } else {
+        _wsConnected = false;
+        debugPrint('[WEBSOCKET] Connection object is null for chat ${widget.chatId}');
+      }
     } catch (e) {
       // WebSocket connection failed - log error
-      debugPrint('[WEBSOCKET] ❌ Connection failed for chat ${widget.chatId}: $e');
+      debugPrint('[WEBSOCKET] Connection failed for chat ${widget.chatId}: $e');
       _wsConnected = false;
-      _webSocketService = null;
     }
   }
   
@@ -1273,6 +1280,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   Future<void> _showImageOptions(Message message, String fileId, String fileName, String contentType) async {
     if (!mounted) return;
     
+    final imageUrl = '${ApiConstants.baseUrl}/media/$fileId?download=true';
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1289,7 +1298,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: _buildPresignedImagePreview(fileId, fileName),
+                child: _buildAuthenticatedImagePreview(imageUrl, fileName),
               ),
             ),
             const SizedBox(height: 16),
@@ -1318,100 +1327,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                _openImageExternally(fileId, fileName);
+                _openImageExternally(imageUrl, fileName);
               },
               child: const Text('Open in Viewer'),
             ),
         ],
       ),
-    );
-  }
-
-  Widget _buildPresignedImagePreview(String fileId, String fileName) {
-    return FutureBuilder<String?>(
-      future: serviceProvider.apiService.getPresignedDownloadUrl(fileId),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            width: 250,
-            height: 180,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
-                strokeWidth: 2,
-              ),
-            ),
-          );
-        }
-
-        if (snapshot.hasError || !snapshot.hasData || snapshot.data == null) {
-          debugPrint('[IMAGE_PREVIEW] Error getting presigned URL: ${snapshot.error}');
-          return Container(
-            width: 250,
-            height: 180,
-            decoration: BoxDecoration(
-              color: Colors.red.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.broken_image, color: Colors.red, size: 32),
-                SizedBox(height: 8),
-                Text('Preview not available'),
-              ],
-            ),
-          );
-        }
-
-        final presignedUrl = snapshot.data!;
-        return Image.network(
-          presignedUrl,
-          width: 250,
-          height: 180,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            debugPrint('[IMAGE_PREVIEW] Error loading image from presigned URL: $error');
-            return Container(
-              width: 250,
-              height: 180,
-              decoration: BoxDecoration(
-                color: Colors.red.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.broken_image, color: Colors.red, size: 32),
-                  SizedBox(height: 8),
-                  Text('Preview not available'),
-                ],
-              ),
-            );
-          },
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-            return Container(
-              width: 250,
-              height: 180,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
-                  strokeWidth: 2,
-                ),
-              ),
-            );
-          },
-        );
-      },
     );
   }
 
@@ -1613,16 +1534,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       
       if (downloadResponse.statusCode == 200 && downloadResponse.data != null) {
         final data = downloadResponse.data;
-        // Handle both direct response and wrapped response formats
-        String? presignedUrl;
-        
-        if (data is Map<String, dynamic>) {
-          // Direct response format from updated endpoint
-          presignedUrl = data['download_url'] as String?;
-        } else if (data['data'] != null && data['data'] is Map<String, dynamic>) {
-          // Wrapped response format
-          presignedUrl = data['data']['download_url'] as String?;
-        }
+        final presignedUrl = data['data']?['download_url'] as String?;
         
         if (presignedUrl != null && presignedUrl.isNotEmpty) {
           debugPrint('[FILE_WEB] Using presigned URL for download: ${presignedUrl.length > 50 ? '${presignedUrl.substring(0, 50)}...' : presignedUrl}');

@@ -3853,10 +3853,16 @@ class WebSocketConnection {
     }
     
     try {
+      // Get access token for authentication
+      final accessToken = await _getAccessToken();
+      if (accessToken == null) {
+        onError('No access token available');
+        return;
+      }
+      
       // ✅ FINAL FIX (NO localhost, ONLY DOMAIN)
-      // HTTPOnly cookies are sent automatically by browser
-      // No token needed in query parameters
-      final wsUrl = 'wss://zaply.in.net/ws/chat/$chatId';
+      // WebSocket expects token as query parameter, not headers
+      final wsUrl = 'wss://zaply.in.net/api/v1/messages/ws/chat/$chatId?token=$accessToken&device_id=${Uri.encodeComponent(deviceId)}';
       
       logger('[WEBSOCKET] Connecting to $wsUrl for chat $chatId...');
       
@@ -3894,6 +3900,27 @@ class WebSocketConnection {
         logger('[WEBSOCKET] Max reconnection attempts reached for $chatId');
         _maxRetryExceeded = true;
       }
+    }
+  }
+  
+  /// Get access token from service provider
+  Future<String?> _getAccessToken() async {
+    try {
+      // Try to get from service provider first
+      if (serviceProvider.authService.accessToken != null) {
+        return serviceProvider.authService.accessToken;
+      }
+      
+      // If not available, try to refresh or get from cookies
+      final isAuthenticated = await serviceProvider.authService.checkSessionStatus();
+      if (isAuthenticated && serviceProvider.authService.accessToken != null) {
+        return serviceProvider.authService.accessToken;
+      }
+      
+      return null;
+    } catch (e) {
+      logger('[WEBSOCKET] Error getting access token: $e');
+      return null;
     }
   }
   

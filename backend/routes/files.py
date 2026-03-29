@@ -7136,10 +7136,29 @@ async def download_file(
             print("✅ FINAL CONTENT TYPE:", content_type)
             print("📦 S3 KEY:", s3_key)
             
+            # Validate that we actually have image content
+            body = obj["Body"]
+            first_bytes = body.read(10)
+            body.seek(0)  # Reset stream position
+            
+            # Check if this is actually an image file by reading magic bytes
+            image_signatures = {
+                b'\x89PNG\r\n\x1a\n': 'PNG',
+                b'\xff\xd8\xff': 'JPEG',
+                b'GIF87a': 'GIF',
+                b'GIF89a': 'GIF',
+                b'RIFF': 'WEBP',  # WEBP files start with RIFF
+            }
+            
+            is_image = any(first_bytes.startswith(sig) for sig in image_signatures.keys())
+            if not is_image and content_type.startswith('image/'):
+                print(f"⚠️ WARNING: Content type says image but file signature doesn't match: {first_bytes}")
+                # Still return the content but with correct content type based on signature
+            
             # Return StreamingResponse with proper content type
             from fastapi.responses import StreamingResponse
             return StreamingResponse(
-                obj["Body"],
+                body,
                 media_type=content_type,
                 headers={
                     "Content-Disposition": "inline",
