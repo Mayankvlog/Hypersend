@@ -3912,7 +3912,7 @@ class WebSocketConnection {
       }
       
       // If not available, try to refresh or get from cookies
-      final isAuthenticated = await serviceProvider.authService.checkSessionStatus();
+      final isAuthenticated = await serviceProvider.authService.checkSessionValid();
       if (isAuthenticated && serviceProvider.authService.accessToken != null) {
         return serviceProvider.authService.accessToken;
       }
