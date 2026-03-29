@@ -3860,9 +3860,9 @@ class WebSocketConnection {
         return;
       }
       
-      // ✅ FINAL FIX (NO localhost, ONLY DOMAIN)
+      // ✅ FINAL FIX (localhost for development)
       // WebSocket expects token as query parameter, not headers
-      final wsUrl = 'wss://zaply.in.net/api/v1/messages/ws/chat/$chatId?token=$accessToken&device_id=${Uri.encodeComponent(deviceId)}';
+      final wsUrl = 'ws://zaply.in.net/api/v1/messages/ws/chat/$chatId?token=$accessToken&device_id=${Uri.encodeComponent(deviceId)}';
       
       logger('[WEBSOCKET] Connecting to $wsUrl for chat $chatId...');
       

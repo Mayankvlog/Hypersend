@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import '../services/service_provider.dart';
 
 /// WebSocket service for real-time chat messaging
 /// Connects to production domain with cookie-based authentication

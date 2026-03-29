@@ -1,19 +1,20 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class SimpleApiService {
-  static const String _baseUrl = 'https://zaply.in.net/api/v1';
+  static const String _baseUrl = 'http://zaply.in.net/api/v1';
   final FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
   // 1️⃣ Get stored JWT token securely (matches user's getAuthToken() requirement)
   Future<String?> getAuthToken() async {
     try {
       final token = await _secureStorage.read(key: 'access_token');
-      print('[AUTH_TOKEN] Token retrieved: ${token != null ? "✅ Present" : "❌ Missing"}');
+      debugPrint('[AUTH_TOKEN] Token retrieved: ${token != null ? "✅ Present" : "❌ Missing"}');
       return token;
     } catch (e) {
-      print('Error getting auth token: $e');
+      debugPrint('Error getting auth token: $e');
       return null;
     }
   }
@@ -22,8 +23,8 @@ class SimpleApiService {
   Future<http.Response> get(String endpoint) async {
     final token = await getAuthToken();
     final headers = token != null 
-        ? {'Authorization': 'Bearer $token'} 
-        : {};
+        ? <String, String>{'Authorization': 'Bearer $token'} 
+        : <String, String>{};
     return await http.get(Uri.parse('$_baseUrl$endpoint'), headers: headers);
   }
 
@@ -31,8 +32,8 @@ class SimpleApiService {
   Future<http.Response> post(String endpoint, {Map<String, String>? body}) async {
     final token = await getAuthToken();
     final headers = token != null
-        ? {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'}
-        : {'Content-Type': 'application/json'};
+        ? <String, String>{'Authorization': 'Bearer $token', 'Content-Type': 'application/json'}
+        : <String, String>{'Content-Type': 'application/json'};
     return await http.post(
       Uri.parse('$_baseUrl$endpoint'), 
       headers: headers, 
@@ -43,16 +44,16 @@ class SimpleApiService {
   // 4️⃣ File download with Authorization token (CRITICAL for private files)
   Future<http.Response> downloadFile(String fileId) async {
     final token = await getAuthToken();
-    final headers = token != null ? {'Authorization': 'Bearer $token'} : {};
+    final headers = token != null ? <String, String>{'Authorization': 'Bearer $token'} : <String, String>{};
     
-    print('[DOWNLOAD] Authorization header: ${token != null ? "✅ Present" : "❌ Missing"}');
+    debugPrint('[DOWNLOAD] Authorization header: ${token != null ? "✅ Present" : "❌ Missing"}');
     
     final response = await http.get(
       Uri.parse('$_baseUrl/files/download/$fileId'), 
       headers: headers
     );
     
-    print('[DOWNLOAD] Status: ${response.statusCode} for file: $fileId');
+    debugPrint('[DOWNLOAD] Status: ${response.statusCode} for file: $fileId');
     
     return response;
   }
@@ -61,8 +62,8 @@ class SimpleApiService {
   Future<http.Response> put(String endpoint, {Map<String, String>? body}) async {
     final token = await getAuthToken();
     final headers = token != null
-        ? {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'}
-        : {'Content-Type': 'application/json'};
+        ? <String, String>{'Authorization': 'Bearer $token', 'Content-Type': 'application/json'}
+        : <String, String>{'Content-Type': 'application/json'};
     return await http.put(
       Uri.parse('$_baseUrl$endpoint'), 
       headers: headers, 
@@ -73,7 +74,7 @@ class SimpleApiService {
   // 6️⃣ DELETE request
   Future<http.Response> delete(String endpoint) async {
     final token = await getAuthToken();
-    final headers = token != null ? {'Authorization': 'Bearer $token'} : {};
+    final headers = token != null ? <String, String>{'Authorization': 'Bearer $token'} : <String, String>{};
     return await http.delete(Uri.parse('$_baseUrl$endpoint'), headers: headers);
   }
 
@@ -81,8 +82,8 @@ class SimpleApiService {
   Future<http.Response> patch(String endpoint, {Map<String, String>? body}) async {
     final token = await getAuthToken();
     final headers = token != null
-        ? {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'}
-        : {'Content-Type': 'application/json'};
+        ? <String, String>{'Authorization': 'Bearer $token', 'Content-Type': 'application/json'}
+        : <String, String>{'Content-Type': 'application/json'};
     return await http.patch(
       Uri.parse('$_baseUrl$endpoint'), 
       headers: headers, 
@@ -94,9 +95,9 @@ class SimpleApiService {
   Future<void> storeToken(String token) async {
     try {
       await _secureStorage.write(key: 'access_token', value: token);
-      print('✅ Token stored securely');
+      debugPrint('✅ Token stored securely');
     } catch (e) {
-      print('❌ Error storing token: $e');
+      debugPrint('❌ Error storing token: $e');
     }
   }
 
@@ -104,9 +105,9 @@ class SimpleApiService {
   Future<void> clearToken() async {
     try {
       await _secureStorage.delete(key: 'access_token');
-      print('✅ Token cleared');
+      debugPrint('✅ Token cleared');
     } catch (e) {
-      print('❌ Error clearing token: $e');
+      debugPrint('❌ Error clearing token: $e');
     }
   }
 
@@ -122,11 +123,11 @@ class SimpleApiService {
       // Get user data
       final userResponse = await get('/users/me');
       if (userResponse.statusCode == 200) {
-        print('✅ User data: ${userResponse.body}');
+        debugPrint('✅ User data: ${userResponse.body}');
       }
 
       // 🔥 CRITICAL: File download with JWT authentication (matches user's pseudo code)
-      String token = await getAuthToken(); // Get logged-in user's token
+      String? token = await getAuthToken(); // Get logged-in user's token
       var response = await http.get(
         Uri.parse('$_baseUrl/files/download/69c10401b5df2a45a00227db'),
         headers: {
@@ -135,13 +136,13 @@ class SimpleApiService {
       );
       
       if (response.statusCode == 200) {
-        print('✅ Download OK - JWT authentication successful');
-        print('[INFO] [DOWNLOAD] Authorization header found ✅');
-        print('[INFO] Generated S3 presigned download URL');
+        debugPrint('✅ Download OK - JWT authentication successful');
+        debugPrint('[INFO] [DOWNLOAD] Authorization header found ✅');
+        debugPrint('[INFO] Generated S3 presigned download URL');
       } else if (response.statusCode == 404) {
-        print('❌ File not found - may have been deleted');
+        debugPrint('❌ File not found - may have been deleted');
       } else {
-        print('❌ Download Failed: ${response.statusCode}');
+        debugPrint('❌ Download Failed: ${response.statusCode}');
       }
 
       // POST request example
@@ -149,10 +150,10 @@ class SimpleApiService {
         'name': 'New Chat',
         'type': 'group'
       });
-      print('POST Status: ${postResponse.statusCode}');
+      debugPrint('POST Status: ${postResponse.statusCode}');
 
     } catch (e) {
-      print('❌ Error: $e');
+      debugPrint('❌ Error: $e');
     }
   }
 
@@ -160,12 +161,12 @@ class SimpleApiService {
   Future<bool> checkHealth() async {
     try {
       final response = await http.get(
-        Uri.parse('https://zaply.in.net/health'),
+        Uri.parse('http://localhost:8000/health'),
         headers: {'User-Agent': 'Hypersend-Flutter/1.0'}
       );
       return response.statusCode == 200;
     } catch (e) {
-      print('❌ Health check failed: $e');
+      debugPrint('❌ Health check failed: $e');
       return false;
     }
   }
