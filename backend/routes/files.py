@@ -5998,6 +5998,7 @@ async def complete_upload(
                 "user_id": current_user,
                 "owner_id": current_user,  # CRITICAL: Set owner_id for permission checks
                 "chat_id": upload_record.get("chat_id"),  # CRITICAL: Set chat_id for permission checks
+                "storage_type": "s3",  # CRITICAL: Mark as S3 storage for download endpoint routing
                 "created_at": datetime.now(timezone.utc),
                 "status": "completed",
                 "file_url": file_url,
@@ -9234,25 +9235,17 @@ async def get_media_by_id_main(
 
 
             import asyncio
+            from bson import ObjectId
 
-
-
-
-
-
+            # Convert to ObjectId if possible - same as working download endpoint
+            try:
+                mongo_id = ObjectId(file_id)
+            except Exception:
+                mongo_id = file_id  # fallback to string
 
             file_doc = await asyncio.wait_for(
-
-
-
-                uploads_collection().find_one({"_id": file_id}),
-
-
-
+                files_collection().find_one({"_id": mongo_id}),
                 timeout=30.0,
-
-
-
             )
 
 
@@ -14909,13 +14902,13 @@ async def get_shared_users(file_id: str, current_user: str = Depends(get_current
 
 
 
-        # Query uploads collection by _id - FIXED: was using files_collection
+        # Query files collection by _id
 
         try:
 
             file_doc = await asyncio.wait_for(
 
-                uploads_collection().find_one({"_id": file_oid}),
+                files_collection().find_one({"_id": file_oid}),
 
                 timeout=30.0,
 
