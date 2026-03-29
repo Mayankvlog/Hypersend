@@ -7105,25 +7105,45 @@ async def download_file(
             print("❌ S3 client not available")
             raise HTTPException(status_code=503, detail="S3 service not available")
 
-        # 4. generate presigned URL
+        # 4. Try to get S3 object with proper error handling
         from backend.config import settings
         bucket = settings.S3_BUCKET
         
-        print("🚀 GENERATING PRESIGNED URL...")
-        url = s3_client.generate_presigned_url(
-            "get_object",
-            Params={
-                "Bucket": bucket,
-                "Key": s3_key
-            },
-            ExpiresIn=3600
-        )
-
-        print("✅ PRESIGNED URL GENERATED")
-
-        # 5. Return redirect to presigned URL
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse(url)
+        print("🚀 CHECKING S3 OBJECT...")
+        
+        try:
+            # Check if object exists first
+            obj = s3_client.get_object(Bucket=bucket, Key=s3_key)
+            print("✅ S3 OBJECT EXISTS")
+            
+            # Generate presigned URL
+            url = s3_client.generate_presigned_url(
+                "get_object",
+                Params={
+                    "Bucket": bucket,
+                    "Key": s3_key
+                },
+                ExpiresIn=3600
+            )
+            print("✅ PRESIGNED URL GENERATED")
+            
+            # Return redirect to presigned URL
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url)
+            
+        except s3_client.exceptions.ClientError as e:
+            error_code = e.response['Error']['Code']
+            print(f"❌ S3 ClientError: {error_code} - {e}")
+            
+            if error_code == 'NoSuchKey':
+                print(f"❌ S3 object not found: {s3_key}")
+                raise HTTPException(status_code=404, detail="File not found in storage")
+            else:
+                print(f"❌ S3 ClientError: {e}")
+                raise HTTPException(status_code=404, detail="File not accessible")
+        except Exception as e:
+            print(f"❌ S3 error: {e}")
+            raise HTTPException(status_code=404, detail="File not found")
 
     except HTTPException:
         raise
@@ -8527,8 +8547,15 @@ async def download_file_sync(file_id: str):
         )
         
     except ClientError as e:
-        print(f"❌ S3 download error: {e}")
-        raise HTTPException(status_code=500, detail="Error downloading file")
+        error_code = e.response['Error']['Code']
+        print(f"❌ S3 download error: {error_code} - {e}")
+        
+        if error_code == 'NoSuchKey':
+            print(f"❌ S3 object not found: {s3_key}")
+            raise HTTPException(status_code=404, detail="File not found in storage")
+        else:
+            print(f"❌ S3 ClientError: {e}")
+            raise HTTPException(status_code=404, detail="File not accessible")
 
 
 @router.get("/{file_id}/download-url")
