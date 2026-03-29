@@ -225,6 +225,10 @@ mimetypes.add_type("image/bmp", ".bmp")
 
 mimetypes.add_type("image/tiff", ".tiff")
 
+# MongoDB ObjectId import - FIXED: moved from inside functions to top level
+from bson import ObjectId
+from bson.errors import InvalidId
+
 
 
 mimetypes.add_type("image/svg+xml", ".svg")
@@ -5999,8 +6003,6 @@ async def complete_upload(
 
         # CRITICAL: Insert file record into files_collection after successful S3 verification
 
-        from bson import ObjectId
-
         file_id = ObjectId()
 
         try:
@@ -6652,51 +6654,9 @@ def handle_chunk_size_error(
 
 
 
-# Import ObjectId with fallback
+# Import ObjectId with fallback - REMOVED: now imported at top level
 
-
-
-try:
-
-
-
-    from bson import ObjectId
-
-
-
-except ImportError:
-
-
-
-
-
-
-
-    class ObjectId:
-
-
-
-        def __init__(self, id_str):
-
-
-
-            self.id_str = str(id_str)
-
-
-
-
-
-
-
-        def __str__(self):
-
-
-
-            return self.id_str
-
-
-
-
+# ObjectId is now imported at the top of the file
 
 
 
@@ -7159,9 +7119,6 @@ async def download_file(
         print("🔍 FILE_ID:", file_id)
 
         # 1. DB fetch
-        from bson import ObjectId
-        from bson.errors import InvalidId
-        
         try:
             file_oid = ObjectId(file_id)
             file_doc = await files_collection().find_one({"_id": file_oid})
@@ -7359,8 +7316,7 @@ async def acknowledge_file_delivery(
 
 
 
-    from bson import ObjectId
-
+    
     
 
     # Validate and convert file_id to ObjectId
@@ -8716,7 +8672,6 @@ async def download_file_sync(file_id: str):
 async def get_presigned_download_url(file_id: str, token_data: dict = Depends(verify_jwt_token)):
     """Get S3 presigned URL for file download - no streaming, just URL"""
     
-    from bson import ObjectId
     import boto3
 
     if not ObjectId.is_valid(file_id):
@@ -8799,12 +8754,6 @@ async def stream_media(
 
 
     try:
-
-
-
-        from bson import ObjectId
-
-        
 
         # Validate and convert file_id to ObjectId
 
@@ -9249,8 +9198,7 @@ async def get_media_by_id_main(
 
 
             import asyncio
-            from bson import ObjectId
-
+            
             # Convert to ObjectId if possible - same as working download endpoint
             try:
                 mongo_id = ObjectId(file_id)
@@ -12354,8 +12302,7 @@ async def get_media_by_key(
 
 
 
-            from bson import ObjectId
-
+            
 
 
 
@@ -14892,8 +14839,7 @@ async def get_shared_users(file_id: str, current_user: str = Depends(get_current
 
         import asyncio
 
-        from bson import ObjectId
-
+        
 
 
         # Strict ObjectId validation
@@ -15104,8 +15050,7 @@ async def revoke_file_access(
 
     try:
 
-        from bson import ObjectId
-
+        
         
 
         # Validate and convert file_id to ObjectId
@@ -15382,8 +15327,7 @@ async def get_upload_progress(
 
 
 
-    from bson import ObjectId
-
+    
 
 
 
@@ -23764,8 +23708,7 @@ async def save_to_public_directory(
 
         # Get file info
 
-        from bson import ObjectId
-
+        
         
 
         # Validate and convert file_id to ObjectId
