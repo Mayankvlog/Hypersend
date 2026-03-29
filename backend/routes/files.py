@@ -1,79 +1,26 @@
 import os
-
 import re
-
 import hashlib
-
 import uuid
-
 import json
-
 import math
 
-
-
 import logging
-
-
-
 import asyncio
-
-
-
 import time
-
-
-
 import secrets
-
-
-
 import base64
-
-
-
 from pathlib import Path
-
-
-
 from typing import Optional, List, Dict, Any, Union, AsyncGenerator
-
-
-
 from io import BytesIO
-
-
-
 from datetime import datetime, timezone, timedelta
-
-
-
 import jwt
-
 import boto3
-
 import mimetypes
-
 import aiofiles
-
-
-
-
-
-
-
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-
-
-
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-
-
-
 from cryptography.hazmat.primitives import hashes
-
-
-
 from cryptography.hazmat.backends import default_backend
 
 
@@ -114,39 +61,21 @@ from fastapi import (
 
 from fastapi.responses import (
 
-
-
     FileResponse,
-
-
 
     StreamingResponse,
 
-
-
     Response,
-
-
 
     JSONResponse,
 
-
-
     RedirectResponse,
-
-
 
 )
 
-
-
-
-
-
+from fastapi.encoders import jsonable_encoder
 
 IS_PRODUCTION = (
-
-
 
     os.getenv("ENVIRONMENT", "").lower() == "production"
 
@@ -2390,7 +2319,9 @@ def generate_presigned_url(s3_key: str):
 
 # Create separate routers for different purposes
 
-
+def _encode_doc(doc: Any) -> Any:
+    """Encode document to handle ObjectId serialization"""
+    return jsonable_encoder(doc, custom_encoder={ObjectId: str})
 
 router = APIRouter()  # Main files router for /api/v1/files/*
 
@@ -7130,12 +7061,23 @@ async def download_file(
 
         # 1. DB fetch
         from bson import ObjectId
-        file_oid = ObjectId(file_id)
+        from bson.errors import InvalidId
         
-        file_doc = await asyncio.wait_for(
-            files_collection().find_one({"_id": file_oid}),
-            timeout=30.0,
-        )
+        try:
+            file_oid = ObjectId(file_id)
+            file_doc = await files_collection().find_one({"_id": file_oid})
+        except InvalidId:
+            # If file_id is not a valid ObjectId, try to find by string ID
+            try:
+                file_doc = await files_collection().find_one({"_id": file_id})
+            except Exception:
+                # If both fail, it's likely an invalid ID format
+                print("❌ Invalid file ID format")
+                raise HTTPException(status_code=404, detail="File not found")
+        except Exception as e:
+            # Handle other exceptions (like timeout)
+            print(f"❌ Database error: {str(e)}")
+            raise HTTPException(status_code=500, detail="Database error")
 
         if not file_doc:
             print("❌ File not found in DB")
@@ -7184,7 +7126,13 @@ async def download_file(
         print("💥 DOWNLOAD ERROR:", str(e))
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
+        
+        # Avoid including any MongoDB documents in error response to prevent ObjectId serialization issues
+        error_msg = str(e)
+        if "ObjectId" in error_msg or "not iterable" in error_msg:
+            error_msg = "Download failed due to server error"
+        
+        raise HTTPException(status_code=500, detail=f"Download failed: {error_msg}")
 
 
 @router.post("/{file_id}/ack")
