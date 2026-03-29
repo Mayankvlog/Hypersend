@@ -7085,12 +7085,17 @@ async def download_file(
 
         print("✅ FILE FOUND:", file_doc.get("filename", "unknown"))
 
-        # 2. s3_key check
+        # 2. s3_key check with safety validation
         s3_key = file_doc.get("s3_key") or file_doc.get("object_key")
 
         if not s3_key:
             print("❌ Missing s3_key")
-            raise HTTPException(status_code=500, detail="File missing S3 key")
+            raise HTTPException(status_code=404, detail="File not found")
+
+        # SAFETY CHECK: Only allow files with valid s3_key format (uploads/)
+        if not s3_key.startswith("uploads/"):
+            print(f"❌ Invalid s3_key format: {s3_key}")
+            raise HTTPException(status_code=404, detail="File not found")
 
         print("📦 S3 KEY:", s3_key)
 
